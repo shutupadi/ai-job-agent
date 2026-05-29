@@ -51,12 +51,15 @@ services:
         sync: false
       - key: CANDIDATE_PHONE
         sync: false
-      # ── Search + sources (non-secret) so the hosted pipeline finds real jobs.
-      #    Clean public APIs only — LinkedIn/Naukri scraping stays OFF on the server.
+      # ── Search + sources (non-secret). DELIBERATELY LIGHT for Render's free
+      #    512MB instance: few boards/tenants, low caps, few ranks — so a run
+      #    finishes fast + small and doesn't get OOM-killed. (Your local .env
+      #    keeps the full heavy config.) Clean public APIs only; LinkedIn/Naukri
+      #    scraping stays OFF on the server.
       - key: KEYWORDS
-        value: "SDE,Software Engineer,Backend,Machine Learning,AI Engineer,Quant Analyst,Data Scientist"
+        value: "Software Engineer,Backend,SDE,AI Engineer"
       - key: LOCATIONS
-        value: "Noida,Gurgaon,Bangalore,Hyderabad,Pune,Remote,India"
+        value: "Bangalore,Hyderabad,Remote,India"
       - key: INCLUDE_REMOTE
         value: "true"
       - key: INCLUDE_INTERNATIONAL
@@ -64,9 +67,9 @@ services:
       - key: MIN_SALARY_LPA
         value: "18"
       - key: GREENHOUSE_BOARDS
-        value: "stripe,airbnb,doordash,robinhood,databricks,coinbase,affirm,instacart,pinterest,figma"
+        value: "stripe,databricks,figma"
       - key: LEVER_COMPANIES
-        value: "palantir,netflix,brex,ramp,scaleai,attentive,clever"
+        value: "ramp,scaleai"
       - key: YC_QUERY
         value: "software engineer"
       - key: ENABLE_WORKDAY
@@ -74,9 +77,18 @@ services:
       - key: ENABLE_ORACLE
         value: "true"
       - key: WORKDAY_TENANTS
-        value: "ms.wd5.myworkdayjobs.com|ms|External|Morgan Stanley,nvidia.wd5.myworkdayjobs.com|nvidia|NVIDIAExternalCareerSite|NVIDIA,salesforce.wd12.myworkdayjobs.com|salesforce|External_Career_Site|Salesforce,adobe.wd5.myworkdayjobs.com|adobe|external_experienced|Adobe"
+        value: "ms.wd5.myworkdayjobs.com|ms|External|Morgan Stanley"
       - key: ORACLE_TENANTS
         value: "jpmc.fa.oraclecloud.com|CX_1001|JPMorgan Chase"
+      # Free-tier resource caps (keep the run small + quick):
+      - key: WORKDAY_MAX_PER_TENANT
+        value: "8"
+      - key: ORACLE_MAX_PER_TENANT
+        value: "8"
+      - key: MAX_RANKS_PER_RUN
+        value: "8"
+      - key: LLM_CALL_DELAY_SECONDS
+        value: "2"
 
 databases:
   - name: ai-job-agent-db
