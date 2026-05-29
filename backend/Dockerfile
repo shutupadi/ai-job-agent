@@ -20,4 +20,7 @@ RUN pip install -r requirements.txt && \
 COPY . .
 
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run DB migrations (and best-effort seed) on startup, THEN serve. This makes the
+# image self-contained on hosts like Render that use the Dockerfile CMD directly.
+# (docker-compose overrides this with its own command, so local is unaffected.)
+CMD ["bash", "-lc", "alembic upgrade head && (python -m app.bootstrap || true) && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
