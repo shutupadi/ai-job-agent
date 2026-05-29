@@ -51,6 +51,32 @@ services:
         sync: false
       - key: CANDIDATE_PHONE
         sync: false
+      # ── Search + sources (non-secret) so the hosted pipeline finds real jobs.
+      #    Clean public APIs only — LinkedIn/Naukri scraping stays OFF on the server.
+      - key: KEYWORDS
+        value: "SDE,Software Engineer,Backend,Machine Learning,AI Engineer,Quant Analyst,Data Scientist"
+      - key: LOCATIONS
+        value: "Noida,Gurgaon,Bangalore,Hyderabad,Pune,Remote,India"
+      - key: INCLUDE_REMOTE
+        value: "true"
+      - key: INCLUDE_INTERNATIONAL
+        value: "true"
+      - key: MIN_SALARY_LPA
+        value: "18"
+      - key: GREENHOUSE_BOARDS
+        value: "stripe,airbnb,doordash,robinhood,databricks,coinbase,affirm,instacart,pinterest,figma"
+      - key: LEVER_COMPANIES
+        value: "palantir,netflix,brex,ramp,scaleai,attentive,clever"
+      - key: YC_QUERY
+        value: "software engineer"
+      - key: ENABLE_WORKDAY
+        value: "true"
+      - key: ENABLE_ORACLE
+        value: "true"
+      - key: WORKDAY_TENANTS
+        value: "ms.wd5.myworkdayjobs.com|ms|External|Morgan Stanley,nvidia.wd5.myworkdayjobs.com|nvidia|NVIDIAExternalCareerSite|NVIDIA,salesforce.wd12.myworkdayjobs.com|salesforce|External_Career_Site|Salesforce,adobe.wd5.myworkdayjobs.com|adobe|external_experienced|Adobe"
+      - key: ORACLE_TENANTS
+        value: "jpmc.fa.oraclecloud.com|CX_1001|JPMorgan Chase"
 
 databases:
   - name: ai-job-agent-db
