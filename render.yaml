@@ -1,0 +1,57 @@
+# Render Blueprint — deploys the FastAPI backend + a free Postgres.
+# The frontend deploys separately on Vercel (see frontend/vercel.json + DEPLOY.md).
+#
+# Notes for the FREE tier:
+#   • Free web services SLEEP after ~15 min idle (first request is slow), and
+#     free Postgres EXPIRES after ~90 days — fine for a resume demo.
+#   • Render background workers are NOT free, so the twice-daily pipeline is
+#     triggered by the GitHub Actions cron (.github/workflows/ci.yml →
+#     remote-trigger) hitting POST /api/runs/trigger, instead of running the
+#     scheduler container.
+#   • Set the secret env vars (AICREDITS_API_KEY, GROQ_API_KEY, CANDIDATE_*) in
+#     the Render dashboard — they are marked `sync: false` so they are NOT
+#     committed here.
+services:
+  - type: web
+    name: ai-job-agent-backend
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ai-job-agent-db
+          property: connectionString   # app normalises postgres:// → postgresql+psycopg://
+      - key: APP_ENV
+        value: prod
+      - key: TZ
+        value: Asia/Kolkata
+      - key: APPLY_MODE
+        value: approval
+      - key: LLM_PROVIDER
+        value: aicredits
+      - key: LLM_FALLBACK_PROVIDER
+        value: groq
+      - key: AICREDITS_BASE_URL
+        value: https://api.aicredits.in/v1
+      - key: AICREDITS_MODEL
+        value: anthropic/claude-3-haiku
+      - key: AICREDITS_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CANDIDATE_FULL_NAME
+        sync: false
+      - key: CANDIDATE_EMAIL
+        sync: false
+      - key: CANDIDATE_PHONE
+        sync: false
+
+databases:
+  - name: ai-job-agent-db
+    plan: free

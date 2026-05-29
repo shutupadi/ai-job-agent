@@ -1,0 +1,10 @@
+You extract the most ATS-relevant keywords from a job description.
+
+JOB_TITLE: {job_title}
+JOB_DESCRIPTION:
+{job_description}
+
+Return a STRICT JSON array of 12–20 strings, ordered by importance,
+deduplicated, lowercase unless the term is conventionally cased
+(e.g. "Kubernetes", "AWS"). Focus on hard skills, tools, frameworks,
+and concrete responsibilities. No soft skills like "team player".

@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body { background: #f9fafb; color: #111827; }
+html.dark, html.dark body { background: #0b1020; color: #e5e7eb; }
+
+.card {
+  @apply bg-white rounded-2xl shadow-sm border border-gray-200 p-5;
+}
+.btn {
+  @apply inline-flex items-center gap-2 px-3 py-2 rounded-lg font-medium text-sm
+         bg-accent text-white hover:opacity-90 disabled:opacity-50;
+}
+.btn-ghost {
+  @apply inline-flex items-center gap-2 px-3 py-2 rounded-lg font-medium text-sm
+         bg-white border border-gray-200 hover:bg-gray-50;
+}
+.kv { @apply text-sm text-muted; }
+.pill {
+  @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium;
+}
+.pill-good { @apply pill bg-emerald-50 text-emerald-700; }
+.pill-bad  { @apply pill bg-rose-50 text-rose-700; }
+.pill-warn { @apply pill bg-amber-50 text-amber-700; }
+.pill-info { @apply pill bg-blue-50 text-blue-700; }
+.pill-mute { @apply pill bg-gray-100 text-gray-700; }
+
+/* ── Dark theme ─────────────────────────────────────────────────────
+   Override the shared component classes + a few common text utilities under
+   `html.dark`, so pages don't each need dark: variants sprinkled in. */
+html.dark .card { @apply bg-gray-800 border-gray-700 shadow-none; }
+html.dark .btn-ghost { @apply bg-gray-800 border-gray-700 text-gray-100 hover:bg-gray-700; }
+html.dark input,
+html.dark select,
+html.dark textarea { @apply bg-gray-800 border-gray-700 text-gray-100 placeholder-gray-500; }
+html.dark pre { @apply text-gray-300; }
+html.dark code { @apply text-gray-200; }
+
+/* text utilities → readable on dark */
+html.dark .text-ink { color: #f3f4f6; }
+html.dark .text-muted { color: #9ca3af; }
+html.dark .kv { color: #9ca3af; }
+html.dark .text-gray-700 { color: #d1d5db; }
+html.dark .text-gray-600 { color: #cbd5e1; }
+html.dark .text-gray-500 { color: #9ca3af; }
+
+/* pills → darker, higher-contrast on dark */
+html.dark .pill-good { @apply bg-emerald-900/40 text-emerald-300; }
+html.dark .pill-bad  { @apply bg-rose-900/40 text-rose-300; }
+html.dark .pill-warn { @apply bg-amber-900/40 text-amber-300; }
+html.dark .pill-info { @apply bg-blue-900/40 text-blue-300; }
+html.dark .pill-mute { @apply bg-gray-700 text-gray-200; }

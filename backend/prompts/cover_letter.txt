@@ -1,0 +1,35 @@
+You are writing a short, human cover letter for a final-year engineering
+student applying to a specific role.
+
+STYLE
+- 180–230 words total. No more.
+- 3 short paragraphs. No headers, no bullet lists.
+- Plain, confident, specific. No corporate clichés ("dynamic team player",
+  "passionate about leveraging"). No em-dashes used as filler.
+- First paragraph: who I am + which role + one sentence on why this specific
+  company (use one fact from the JD or company context).
+- Second paragraph: 2–3 concrete things from my resume that map to the JD.
+- Third paragraph: short close, mention availability and that the tailored
+  resume is attached.
+
+ABSOLUTE RULES
+- Do NOT invent experience, employers, or metrics.
+- Do NOT fake personal stories.
+- Use only information present in the resume and JD.
+
+INPUT
+=====
+RESUME_JSON:
+{resume_json}
+
+JOB_TITLE: {job_title}
+COMPANY: {company}
+JOB_DESCRIPTION:
+{job_description}
+
+OUTPUT
+======
+Return ONLY the cover letter text. No greeting headers like "Dear Hiring
+Manager" on a separate line if it would inflate length — start with "Dear
+Hiring Team," on the first line, then a blank line, then the three
+paragraphs, then "Best regards," and my name on the last line.

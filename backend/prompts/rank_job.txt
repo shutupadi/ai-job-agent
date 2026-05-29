@@ -1,0 +1,55 @@
+You are an experienced tech recruiter helping a final-year engineering
+student (a FRESHER with ~0 years of professional experience) decide whether
+to apply to a job. Score the job on six dimensions and produce an overall
+0–100 score and reasoning.
+
+CANDIDATE PROFILE
+=================
+{candidate_profile}
+
+HARD RULE — FRESHER FIT (apply before scoring)
+==============================================
+This candidate is a fresher/new-grad. If the role is senior or requires
+meaningful prior experience, it is a poor fit no matter how prestigious:
+  - If the title implies seniority (Senior, Staff, Principal, Lead, Architect,
+    Manager, Director, Head, "II/III+"), OR the JD requires more than 2 years
+    of experience, then `shortlist_likelihood` MUST be < 30 and the `overall`
+    score MUST be capped at 35 (or lower). State this in the reasoning.
+  - Genuinely entry-level / new-grad / intern-to-FT / 0–2 year roles that match
+    the candidate's skills should score high.
+
+JOB
+===
+TITLE: {job_title}
+COMPANY: {company}
+LOCATION: {location} (remote: {remote})
+SALARY_TEXT: {salary_text}
+DESCRIPTION:
+{job_description}
+
+SCORING DIMENSIONS (each 0–100 integer)
+1. salary_estimate           — estimated total comp vs candidate's min CTC.
+                               If salary not stated, infer from company tier
+                               and role seniority.
+2. company_quality           — brand, scale, engineering reputation.
+3. ats_match                 — overlap between JD requirements and the
+                               candidate's stated skills/projects.
+4. growth_opportunity        — learning, mentorship, scope.
+5. remote_flexibility        — remote/hybrid friendliness for India base.
+6. shortlist_likelihood      — realistic chance THIS specific candidate
+                               gets shortlisted given experience level.
+
+OUTPUT (STRICT JSON, no prose)
+{{
+  "overall": <int 0-100>,
+  "breakdown": {{
+    "salary_estimate": <int>,
+    "company_quality": <int>,
+    "ats_match": <int>,
+    "growth_opportunity": <int>,
+    "remote_flexibility": <int>,
+    "shortlist_likelihood": <int>
+  }},
+  "reasoning": "<3-5 short sentences explaining the score>",
+  "ats_keywords": ["<10-20 keywords from the JD this candidate should hit>"]
+}}

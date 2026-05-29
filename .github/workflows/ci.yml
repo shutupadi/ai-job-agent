@@ -1,0 +1,77 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Pipeline trigger every 12h: 09:00 and 21:00 IST = 03:30 and 15:30 UTC
+    - cron: "30 3 * * *"
+    - cron: "30 15 * * *"
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install backend deps (excluding Playwright browsers)
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Run pytest + coverage
+        working-directory: backend
+        env:
+          ANTHROPIC_API_KEY: dummy
+          AICREDITS_API_KEY: dummy
+          GEMINI_API_KEY: dummy
+          GROQ_API_KEY: dummy
+          DATABASE_URL: sqlite:///:memory:
+        run: pytest -q --cov=app --cov-report=xml --cov-report=term-missing
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./backend/coverage.xml
+          flags: backend
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+  # Free "scheduler": on cron, ping the deployed backend to run the pipeline.
+  # This replaces a paid always-on worker when hosting the backend on a free
+  # tier (e.g. Render free). It no-ops gracefully until you set the repo secret
+  # JOBAGENT_API_URL (your backend's public URL, e.g. https://xxx.onrender.com).
+  remote-trigger:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - name: Trigger pipeline run
+        env:
+          URL: ${{ secrets.JOBAGENT_API_URL }}
+          TOKEN: ${{ secrets.JOBAGENT_TOKEN }}
+        run: |
+          if [ -z "$URL" ]; then
+            echo "JOBAGENT_API_URL not set — skipping (configure it to enable the hosted scheduler)."
+            exit 0
+          fi
+          # Free hosts sleep; first hit may wake them. Don't fail the workflow on a cold start.
+          curl -fsS -X POST "$URL/api/runs/trigger" \
+            ${TOKEN:+-H "Authorization: Bearer $TOKEN"} \
+            || echo "Trigger returned non-2xx (backend may have been asleep; it should wake now)."
