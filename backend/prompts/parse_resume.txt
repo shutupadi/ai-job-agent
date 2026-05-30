@@ -11,6 +11,7 @@ SCHEMA
   "name": "<full name>",
   "email": "<email or ''>",
   "phone": "<phone or ''>",
+  "experience_years": <number: total years of professional + internship experience, 0 if none>,
   "links": {{ "linkedin": "", "github": "", "portfolio": "" }},
   "summary": "<2-3 sentence professional summary drawn from the résumé>",
   "skills": {{ "languages": [], "frameworks": [], "infra": [], "concepts": [] }},

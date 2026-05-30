@@ -45,6 +45,39 @@ def _fetch_all() -> List[RawJob]:
     return out
 
 
+def prune_old_jobs(days: int) -> int:
+    """Delete jobs older than `days` that nobody acted on (no application, and no
+    ranking marked tailored/applied). Their stale rankings cascade-delete. Keeps
+    the shared pool fresh + small. Returns the number deleted."""
+    if days <= 0:
+        return 0
+    cutoff = dt.datetime.utcnow() - dt.timedelta(days=days)
+    with session_scope() as db:
+        protected_apps = db.query(models.Application.job_id).filter(
+            models.Application.job_id.isnot(None)
+        )
+        protected_rk = db.query(models.Ranking.job_id).filter(
+            models.Ranking.status.in_(("tailored", "applied"))
+        )
+        ids = [
+            row[0]
+            for row in db.query(models.Job.id)
+            .filter(models.Job.discovered_at < cutoff)
+            .filter(models.Job.id.notin_(protected_apps))
+            .filter(models.Job.id.notin_(protected_rk))
+            .all()
+        ]
+        deleted = 0
+        for i in range(0, len(ids), 500):
+            chunk = ids[i : i + 500]
+            deleted += (
+                db.query(models.Job)
+                .filter(models.Job.id.in_(chunk))
+                .delete(synchronize_session=False)
+            )
+        return deleted
+
+
 def rank_jobs_for_user(user_id: str, resume_json: dict, limit: int) -> int:
     """Rank up to `limit` jobs this user has NO ranking for yet, against their
     résumé. Budget-aware, rate-limited, circuit-broken. Returns count ranked."""
@@ -134,6 +167,11 @@ def run_pipeline(trigger: str = "manual", user_id: Optional[str] = None) -> str:
         if n:
             users_ranked += 1
 
+    # ── 2b. cleanup: free up old jobs nobody acted on ──
+    pruned = prune_old_jobs(settings.job_retention_days)
+    if pruned:
+        log.info(f"Pruned {pruned} old jobs (>{settings.job_retention_days}d, unused)")
+
     # ── 3. finalise ──
     with session_scope() as db:
         run = db.get(models.Run, run_id)
@@ -148,6 +186,7 @@ def run_pipeline(trigger: str = "manual", user_id: Optional[str] = None) -> str:
             f"  new jobs:     {run.jobs_new}\n"
             f"  users ranked: {users_ranked} (of {len(targets)} with résumés)\n"
             f"  rankings:     {total_ranked}\n"
+            f"  pruned old:   {pruned}\n"
         )
         log.info(run.summary)
 

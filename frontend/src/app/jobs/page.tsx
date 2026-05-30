@@ -93,7 +93,7 @@ export default function JobsPage() {
             Filters:{' '}
             {cfg.experience_filter_enabled
               ? `fresher/entry-level only (≤ ${cfg.max_experience_years} yrs)`
-              : 'experience filter OFF'}
+              : 'all levels — matched to your résumé'}
             {' · '}
             {cfg.geo_filter_enabled ? 'India / remote / sponsored only' : 'geo filter OFF'}
             {' · '}mode: {cfg.apply_mode}

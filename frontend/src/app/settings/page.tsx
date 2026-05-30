@@ -114,7 +114,7 @@ export default function SettingsPage() {
         <h2 className="font-semibold mb-3">Filters</h2>
         <div className="grid grid-cols-2 gap-2 text-sm">
           <ReadOnly
-            label="Fresher / entry-level"
+            label="Fresher-only gate"
             on={s.experience_filter_enabled}
             extra={s.experience_filter_enabled ? `≤ ${s.max_experience_years} yrs` : ''}
           />

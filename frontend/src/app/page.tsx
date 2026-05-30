@@ -47,7 +47,7 @@ export default function HomePage() {
         <div>
           <h1 className="text-2xl font-bold">Dashboard</h1>
           <p className="text-muted text-sm">
-            Fresher-only job discovery → review → tailor → apply.
+            Jobs matched to your résumé → review → tailor → apply.
           </p>
           <div className="flex flex-wrap items-center gap-2 mt-2">
             <span className={data.apply_mode === 'approval' ? 'pill-info' : 'pill-warn'}>
@@ -66,8 +66,8 @@ export default function HomePage() {
         <section className="card border-l-4 border-l-warn">
           <h2 className="font-semibold">👋 Start here — upload your résumé</h2>
           <p className="text-sm text-muted mt-1">
-            We parse it with AI and match fresher jobs to <b>your</b> skills.
-            Until you upload one, there's nothing to rank for you.
+            We parse it with AI and match jobs to <b>your</b> skills and
+            experience level. Until you upload one, there's nothing to rank for you.
           </p>
           <div className="mt-3">
             <ResumeUpload onUploaded={() => refresh()} />
@@ -88,7 +88,7 @@ export default function HomePage() {
               <span className="text-base font-medium text-muted"> shortlisted role{data.shortlisted === 1 ? '' : 's'}</span>
             </div>
             <div className="text-sm text-muted mt-1">
-              Entry-level matches scoring ≥ {data.min_rank_to_apply}. Click to review, tailor &amp; apply →
+              Matches scoring ≥ {data.min_rank_to_apply}. Click to review, tailor &amp; apply →
             </div>
           </div>
           <span className="pill-good text-base px-3 py-1">Review →</span>

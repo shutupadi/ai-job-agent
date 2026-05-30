@@ -60,6 +60,10 @@ def _normalize(p: dict) -> None:
     for k in ("name", "email", "phone", "summary"):
         if not isinstance(p.get(k), str):
             p[k] = str(p.get(k) or "")
+    try:
+        p["experience_years"] = max(0, int(float(p.get("experience_years") or 0)))
+    except (TypeError, ValueError):
+        p["experience_years"] = 0
 
 
 def parse_resume_text(text: str) -> dict:

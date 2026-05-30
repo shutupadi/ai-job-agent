@@ -7,7 +7,9 @@ résumé. The job pool itself is shared.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
+import re
 from typing import Any, Dict
 
 from sqlalchemy.orm import Session
@@ -18,8 +20,38 @@ from app.services.llm import llm
 from app.utils.logger import log
 
 
+def _year(s) -> int | None:
+    m = re.search(r"(19|20)\d{2}", str(s or ""))
+    return int(m.group()) if m else None
+
+
+def _estimate_years(experience) -> int:
+    """Rough total years from experience entries' start/end dates (fallback)."""
+    if not isinstance(experience, list):
+        return 0
+    now = dt.datetime.utcnow().year
+    total = 0
+    for e in experience:
+        if not isinstance(e, dict):
+            continue
+        start = _year(e.get("start"))
+        end = _year(e.get("end")) or now
+        if start:
+            total += max(0, end - start)
+    return total
+
+
+def experience_level(years: int) -> str:
+    if years < 2:
+        return "entry / new-grad"
+    if years < 6:
+        return "mid-level"
+    return "senior"
+
+
 def candidate_profile(resume_json: dict) -> str:
-    """Compact profile string for the ranking prompt, from a user's résumé."""
+    """Compact, EXPERIENCE-AWARE profile for the ranking prompt — works for any
+    level (fresher to senior), derived from the user's own résumé."""
     skills = resume_json.get("skills") or {}
     flat_skills = []
     if isinstance(skills, dict):
@@ -27,18 +59,27 @@ def candidate_profile(resume_json: dict) -> str:
             flat_skills.extend(v or [])
     else:
         flat_skills = list(skills)
+
+    years = resume_json.get("experience_years")
+    if not isinstance(years, (int, float)):
+        years = _estimate_years(resume_json.get("experience"))
+    years = int(years or 0)
+
+    titles = [
+        e.get("title")
+        for e in (resume_json.get("experience") or [])
+        if isinstance(e, dict) and e.get("title")
+    ][:3]
+
     return json.dumps(
         {
             "name": resume_json.get("name"),
             "summary": resume_json.get("summary"),
-            "seniority": (
-                "FRESHER — ~0 years professional experience (internships only). "
-                "Targeting entry-level / new-grad roles."
-            ),
-            "professional_experience_years": 0,
+            "professional_experience_years": years,
+            "experience_level": experience_level(years),
+            "recent_titles": titles,
             "min_salary_lpa": settings.min_salary_lpa,
             "skills": flat_skills,
-            "interests": ["SDE", "AI/ML", "Quant/analyst tech roles"],
         },
         indent=2,
     )

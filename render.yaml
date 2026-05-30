@@ -77,6 +77,12 @@ services:
         value: "true"
       - key: MIN_SALARY_LPA
         value: "18"
+      # Open to ALL experience levels — per-user matching handles fit.
+      - key: EXPERIENCE_FILTER_ENABLED
+        value: "false"
+      # Auto-cleanup old jobs nobody acted on.
+      - key: JOB_RETENTION_DAYS
+        value: "30"
       - key: GREENHOUSE_BOARDS
         value: "stripe,databricks,figma"
       - key: LEVER_COMPANIES

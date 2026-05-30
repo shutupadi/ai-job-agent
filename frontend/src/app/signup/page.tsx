@@ -44,7 +44,7 @@ export default function SignupPage() {
             AI Job Agent
           </div>
           <h1 className="text-xl font-bold mt-3">Create your account</h1>
-          <p className="text-muted text-sm">Find fresher jobs tailored to your résumé</p>
+          <p className="text-muted text-sm">Find jobs tailored to your résumé</p>
         </div>
         <form onSubmit={submit} className="space-y-3">
           <input
