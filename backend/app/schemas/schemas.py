@@ -6,7 +6,7 @@ import datetime as dt
 from pathlib import Path
 from typing import Any, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field
 
 from app.config import settings
 
@@ -201,3 +201,45 @@ class TailorResponse(BaseModel):
     """Returned by POST /api/resume/tailor and GET /api/resume/for-job/{id}."""
     resume: Optional[ResumeVersionOut] = None
     cover_letter: Optional[CoverLetterOut] = None
+
+
+# ── Auth (multi-user) ──
+class SignupRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=200)
+    name: Optional[str] = None
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class GoogleAuthRequest(BaseModel):
+    # Google ID token (JWT) from Google Identity Services on the frontend.
+    credential: str
+
+
+class UserOut(BaseModel):
+    id: str
+    email: str
+    name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    is_admin: bool = False
+    has_resume: bool = False
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserOut
+
+
+# ── Résumé upload (multi-user) ──
+class MasterResumeOut(BaseModel):
+    """The user's active parsed master résumé."""
+    id: Optional[str] = None
+    filename: Optional[str] = None
+    parsed_json: Optional[dict] = None
+    created_at: Optional[dt.datetime] = None
+    has_resume: bool = False

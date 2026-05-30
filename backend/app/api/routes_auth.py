@@ -1,0 +1,121 @@
+"""Auth endpoints — signup / login / me / google."""
+
+from __future__ import annotations
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.auth.deps import get_current_user
+from app.auth.security import create_access_token, hash_password, verify_password
+from app.config import settings
+from app.db import models
+from app.db.session import get_db
+from app.schemas.schemas import (
+    GoogleAuthRequest,
+    LoginRequest,
+    SignupRequest,
+    TokenResponse,
+    UserOut,
+)
+
+router = APIRouter()
+
+
+def _has_resume(db: Session, user_id: str) -> bool:
+    return (
+        db.query(models.Resume)
+        .filter(models.Resume.user_id == user_id, models.Resume.is_active.is_(True))
+        .first()
+        is not None
+    )
+
+
+def _user_out(db: Session, user: models.User) -> UserOut:
+    return UserOut(
+        id=user.id,
+        email=user.email,
+        name=user.name,
+        avatar_url=user.avatar_url,
+        is_admin=user.is_admin,
+        has_resume=_has_resume(db, user.id),
+    )
+
+
+def _token_response(db: Session, user: models.User) -> TokenResponse:
+    return TokenResponse(access_token=create_access_token(user.id), user=_user_out(db, user))
+
+
+@router.post("/signup", response_model=TokenResponse, status_code=201)
+def signup(payload: SignupRequest, db: Session = Depends(get_db)):
+    email = payload.email.lower().strip()
+    if db.query(models.User).filter(models.User.email == email).first():
+        raise HTTPException(409, "An account with this email already exists.")
+    user = models.User(
+        email=email,
+        name=(payload.name or "").strip() or None,
+        password_hash=hash_password(payload.password),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return _token_response(db, user)
+
+
+@router.post("/login", response_model=TokenResponse)
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    email = payload.email.lower().strip()
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if not user or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(401, "Invalid email or password.")
+    if not user.is_active:
+        raise HTTPException(403, "Account disabled.")
+    return _token_response(db, user)
+
+
+@router.get("/me", response_model=UserOut)
+def me(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return _user_out(db, user)
+
+
+@router.post("/google", response_model=TokenResponse)
+def google(payload: GoogleAuthRequest, db: Session = Depends(get_db)):
+    """Sign in with a Google ID token (verified via Google's tokeninfo)."""
+    if not settings.google_client_id:
+        raise HTTPException(400, "Google sign-in is not configured on the server.")
+    try:
+        r = httpx.get(
+            "https://oauth2.googleapis.com/tokeninfo",
+            params={"id_token": payload.credential},
+            timeout=15,
+        )
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Could not reach Google: {e}")
+    if r.status_code != 200:
+        raise HTTPException(401, "Invalid Google token.")
+    info = r.json()
+    if info.get("aud") != settings.google_client_id:
+        raise HTTPException(401, "Google token audience mismatch.")
+    email = (info.get("email") or "").lower().strip()
+    sub = info.get("sub")
+    if not email or not sub:
+        raise HTTPException(401, "Google token missing email/sub.")
+
+    user = db.query(models.User).filter(models.User.google_sub == sub).first()
+    if not user:
+        user = db.query(models.User).filter(models.User.email == email).first()
+        if user:
+            user.google_sub = sub
+            if not user.avatar_url:
+                user.avatar_url = info.get("picture")
+        else:
+            user = models.User(
+                email=email,
+                name=info.get("name"),
+                google_sub=sub,
+                avatar_url=info.get("picture"),
+            )
+            db.add(user)
+    db.commit()
+    db.refresh(user)
+    return _token_response(db, user)

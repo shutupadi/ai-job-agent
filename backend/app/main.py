@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api import (
     routes_applications,
+    routes_auth,
     routes_dashboard,
     routes_jobs,
     routes_resume,
@@ -43,6 +44,7 @@ app.add_middleware(
 )
 
 # Routers
+app.include_router(routes_auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(routes_jobs.router, prefix="/api/jobs", tags=["jobs"])
 app.include_router(
     routes_applications.router, prefix="/api/applications", tags=["applications"]

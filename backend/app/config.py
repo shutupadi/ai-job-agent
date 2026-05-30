@@ -117,6 +117,21 @@ class Settings(BaseSettings):
     experience_filter_enabled: bool = True
     max_experience_years: int = 2
 
+    # ── Auth (multi-user) ──
+    # JWT signing secret — MUST be overridden in production (set JWT_SECRET).
+    jwt_secret: str = "dev-insecure-change-me-please-min-32-characters-long"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60 * 24 * 7  # 7 days
+    # Google OAuth (optional) — leave blank to hide the "Sign in with Google"
+    # button. Create credentials at https://console.cloud.google.com/apis/credentials
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    # Public URL of the frontend — used for OAuth redirects + email links.
+    frontend_url: str = "http://localhost:3000"
+    # Max résumé upload size (MB) and how many jobs to rank per user per run.
+    max_resume_mb: int = 5
+    max_ranks_per_user: int = 12
+
     # ── Source toggles ──
     enable_greenhouse: bool = True
     enable_lever: bool = True
