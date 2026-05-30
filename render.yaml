@@ -41,6 +41,17 @@ services:
         value: anthropic/claude-3-haiku
       - key: AICREDITS_API_KEY
         sync: false
+      # ── Auth (multi-user) ──
+      - key: JWT_SECRET
+        generateValue: true          # Render generates a strong random secret
+      - key: JWT_EXPIRE_MINUTES
+        value: "10080"
+      - key: GOOGLE_CLIENT_ID
+        sync: false                  # set in dashboard to enable Google sign-in
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: FRONTEND_URL
+        sync: false                  # your Vercel URL
       - key: GROQ_API_KEY
         sync: false
       - key: GEMINI_API_KEY
