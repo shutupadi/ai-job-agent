@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import List
 
 from app.config import settings
+from app.sources.adzuna import AdzunaSource
 from app.sources.base import JobSource
 from app.sources.greenhouse import GreenhouseSource
 from app.sources.indeed import IndeedSource
@@ -37,4 +38,6 @@ def enabled_sources() -> List[JobSource]:
         sources.append(NaukriSource())
     if settings.enable_wellfound:
         sources.append(WellfoundSource())
+    if settings.enable_adzuna:
+        sources.append(AdzunaSource())
     return sources

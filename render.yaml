@@ -100,6 +100,17 @@ services:
         value: "true"
       - key: LINKEDIN_MAX
         value: "15"
+      # Adzuna jobs API — high-volume, keyword-searched, covers top firms
+      # (Goldman, Bloomberg, big tech). Set the two keys in the dashboard
+      # (free at developer.adzuna.com); until then it skips gracefully.
+      - key: ENABLE_ADZUNA
+        value: "true"
+      - key: ADZUNA_COUNTRY
+        value: "in"
+      - key: ADZUNA_APP_ID
+        sync: false
+      - key: ADZUNA_APP_KEY
+        sync: false
       - key: WORKDAY_TENANTS
         value: "ms.wd5.myworkdayjobs.com|ms|External|Morgan Stanley,nvidia.wd5.myworkdayjobs.com|nvidia|NVIDIAExternalCareerSite|NVIDIA"
       - key: ORACLE_TENANTS

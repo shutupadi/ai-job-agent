@@ -145,6 +145,7 @@ class Settings(BaseSettings):
     enable_indeed: bool = False
     enable_naukri: bool = False
     enable_wellfound: bool = False
+    enable_adzuna: bool = False
 
     greenhouse_boards_raw: str = Field(default="", alias="GREENHOUSE_BOARDS")
     lever_companies_raw: str = Field(default="", alias="LEVER_COMPANIES")
@@ -167,6 +168,13 @@ class Settings(BaseSettings):
     naukri_max: int = 25
     workday_max_per_tenant: int = 40
     oracle_max_per_tenant: int = 40
+
+    # ── Adzuna jobs API (high-volume, keyword-searched, ToS-clean) ──
+    # Free key at https://developer.adzuna.com → set both. Country e.g. 'in','us'.
+    adzuna_app_id: str = ""
+    adzuna_app_key: str = ""
+    adzuna_country: str = "in"
+    adzuna_max: int = 60
 
     # ── LinkedIn logged-in DISCOVERY (LOCAL, attended) ──
     # Used only by `python -m app.automation.linkedin_discover`, NOT the Docker

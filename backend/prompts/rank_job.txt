@@ -7,8 +7,19 @@ CANDIDATE PROFILE
 =================
 {candidate_profile}
 
-HARD RULE — EXPERIENCE-LEVEL FIT (apply before scoring)
-======================================================
+HARD RULE #1 — ROLE FIT (most important)
+========================================
+`overall` must primarily reflect whether the JOB MATCHES THE CANDIDATE'S
+PROFESSION + SKILLS — NOT the company's fame.
+  - If the job is a DIFFERENT profession than the candidate's (e.g. a Sales /
+    Account Executive / Recruiter / HR / Marketing / Customer-Success / Support /
+    Design / Finance role for a software engineer), it is a BAD fit: `ats_match`
+    must be low and `overall` MUST be ≤ 40 — even at a prestigious company.
+  - A famous company NEVER rescues a role the candidate isn't trained for.
+    Prefer a great role-match at any company over a wrong-role at a big name.
+
+HARD RULE #2 — EXPERIENCE-LEVEL FIT
+===================================
 Match the job's required seniority to the candidate's actual level:
   - If the job requires SIGNIFICANTLY MORE experience than the candidate has
     (e.g. a Senior/Staff/Principal/Lead/Manager/Director title, or "5+ years"
@@ -39,6 +50,10 @@ SCORING DIMENSIONS (each 0–100 integer)
 5. remote_flexibility        — remote/hybrid friendliness for India base.
 6. shortlist_likelihood      — realistic chance THIS specific candidate
                                gets shortlisted given experience level.
+
+`overall` is driven MAINLY by ats_match (role + skills fit) and
+shortlist_likelihood. company_quality, salary and remote are secondary
+tie-breakers — never let them lift a wrong-role/wrong-level job.
 
 OUTPUT (STRICT JSON, no prose)
 {{

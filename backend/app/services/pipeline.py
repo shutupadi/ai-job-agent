@@ -23,7 +23,7 @@ from typing import List, Optional, Tuple
 from app.config import settings
 from app.db import models
 from app.db.session import session_scope
-from app.services import experience_filter, geo_filter, ranking, resume_engine
+from app.services import experience_filter, geo_filter, ranking, relevance, resume_engine
 from app.services.dedupe import upsert_jobs
 from app.services.notifier import notify_summary
 from app.sources.base import RawJob
@@ -92,7 +92,9 @@ def rank_jobs_for_user(
 ) -> int:
     """Rank up to `limit` of this user's not-yet-ranked jobs against their résumé.
     In fresher mode, only entry-level jobs are considered."""
-    fetch_n = limit * 4 if fresher else limit
+    # Pull a wide pool of not-yet-ranked jobs, then keep only the most
+    # RÉSUMÉ-RELEVANT `limit` to spend LLM calls on (skips off-target sales/HR/etc.).
+    pool_size = max(limit * 12, 300)
     with session_scope() as db:
         already = db.query(models.Ranking.job_id).filter(models.Ranking.user_id == user_id)
         cands = (
@@ -100,14 +102,21 @@ def rank_jobs_for_user(
             .filter(models.Job.id.notin_(already))
             .filter(models.Job.description != "")
             .order_by(models.Job.discovered_at.desc())
-            .limit(fetch_n)
+            .limit(pool_size)
             .all()
         )
         rows = [(j.id, j.title, j.description) for j in cands]
 
     if fresher:
         rows = [r for r in rows if experience_filter.is_fresher_friendly(r[1], r[2])]
-    new_ids = [r[0] for r in rows][:limit]
+
+    terms = relevance.candidate_terms(resume_json)
+    technical = relevance.is_technical(terms)
+    rows.sort(
+        key=lambda r: relevance.relevance_score(terms, technical, r[1], r[2]),
+        reverse=True,
+    )
+    new_ids = [r[0] for r in rows[:limit]]
     if not new_ids:
         return 0
 
