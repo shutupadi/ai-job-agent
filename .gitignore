@@ -17,6 +17,7 @@ backend/storage/cover_letters/*.pdf
 backend/storage/screenshots/*.png
 backend/storage/exports/*.csv
 backend/storage/linkedin_profile/
+backend/storage/uploads/
 backend/data/master_resume.json
 .DS_Store
 *.sqlite3
