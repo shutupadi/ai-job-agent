@@ -64,6 +64,10 @@ class User(Base):
     avatar_url: Mapped[Optional[str]] = mapped_column(String(512))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 'fresher' = only entry-level jobs (deterministic filter); 'all' = every
+    # level, matched to the user's résumé. Defaults to fresher (protects new
+    # grads from senior-role noise; experienced users toggle it off).
+    experience_pref: Mapped[str] = mapped_column(String(16), default="fresher")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_now)
 
     resumes: Mapped[list["Resume"]] = relationship(

@@ -49,9 +49,53 @@ def experience_level(years: int) -> str:
     return "senior"
 
 
-def candidate_profile(resume_json: dict) -> str:
-    """Compact, EXPERIENCE-AWARE profile for the ranking prompt — works for any
-    level (fresher to senior), derived from the user's own résumé."""
+# Top product companies + investment banks / quant funds — these get a relevance
+# bonus so they float to the top of the shortlist (user-requested priority).
+TOP_COMPANIES = {
+    "google", "alphabet", "meta", "facebook", "amazon", "microsoft", "apple",
+    "netflix", "stripe", "databricks", "nvidia", "openai", "anthropic", "uber",
+    "airbnb", "atlassian", "salesforce", "adobe", "snowflake", "coinbase",
+    "datadog", "figma", "dropbox", "instacart", "doordash", "pinterest",
+    "robinhood", "plaid", "brex", "ramp", "linkedin", "spotify", "cloudflare",
+    "mongodb", "confluent", "hashicorp", "palantir", "scale ai", "roblox",
+    "reddit", "notion", "canva", "razorpay", "cred", "zerodha", "flipkart",
+    "swiggy", "zomato", "phonepe", "groww", "postman", "intuit", "servicenow",
+    # investment banks / quant / finance
+    "goldman sachs", "morgan stanley", "jpmorgan", "jp morgan", "j.p. morgan",
+    "bank of america", "barclays", "citi", "citigroup", "deutsche bank", "ubs",
+    "hsbc", "wells fargo", "blackrock", "blackstone", "citadel", "jane street",
+    "two sigma", "de shaw", "d. e. shaw", "optiver", "jump trading",
+    "hudson river", "tower research", "millennium", "point72", "susquehanna",
+}
+
+
+def _company_boost(company: str) -> int:
+    c = (company or "").lower()
+    return 8 if any(t in c for t in TOP_COMPANIES) else 0
+
+
+def _recency_boost(job: "models.Job") -> int:
+    when = getattr(job, "posted_at", None) or getattr(job, "discovered_at", None)
+    if not when:
+        return 0
+    try:
+        age_days = (dt.datetime.utcnow() - when).days
+    except Exception:
+        return 0
+    if age_days <= 1:
+        return 6
+    if age_days <= 3:
+        return 4
+    if age_days <= 7:
+        return 2
+    return 0
+
+
+def candidate_profile(resume_json: dict, fresher: bool = False) -> str:
+    """Compact, EXPERIENCE-AWARE profile for the ranking prompt. Works for any
+    level (fresher → senior) from the user's own résumé. When `fresher` is set
+    (per-user fresher mode), the candidate is framed as a 0-experience new-grad
+    regardless of what the parser guessed."""
     skills = resume_json.get("skills") or {}
     flat_skills = []
     if isinstance(skills, dict):
@@ -64,6 +108,11 @@ def candidate_profile(resume_json: dict) -> str:
     if not isinstance(years, (int, float)):
         years = _estimate_years(resume_json.get("experience"))
     years = int(years or 0)
+    if fresher:
+        years = 0
+        level = "entry / new-grad (FRESHER MODE — only entry-level roles)"
+    else:
+        level = experience_level(years)
 
     titles = [
         e.get("title")
@@ -76,7 +125,7 @@ def candidate_profile(resume_json: dict) -> str:
             "name": resume_json.get("name"),
             "summary": resume_json.get("summary"),
             "professional_experience_years": years,
-            "experience_level": experience_level(years),
+            "experience_level": level,
             "recent_titles": titles,
             "min_salary_lpa": settings.min_salary_lpa,
             "skills": flat_skills,
@@ -86,11 +135,12 @@ def candidate_profile(resume_json: dict) -> str:
 
 
 def rank_job_for_user(
-    db: Session, user_id: str, resume_json: dict, job: models.Job
+    db: Session, user_id: str, resume_json: dict, job: models.Job, fresher: bool = False
 ) -> models.Ranking:
-    """Score one job for one user; upsert their Ranking row."""
+    """Score one job for one user; upsert their Ranking row. The LLM 0-100 score
+    is then nudged by deterministic recency + top-company boosts."""
     prompt = llm.load_prompt("rank_job").format(
-        candidate_profile=candidate_profile(resume_json),
+        candidate_profile=candidate_profile(resume_json, fresher=fresher),
         job_title=job.title,
         company=job.company,
         location=job.location or "Unknown",
@@ -115,7 +165,11 @@ def rank_job_for_user(
         rk = models.Ranking(user_id=user_id, job_id=job.id)
         db.add(rk)
 
-    rk.rank_score = int(payload.get("overall", 0))
+    base = int(payload.get("overall", 0))
+    # Only lift jobs that are already a decent fit — don't let company/recency
+    # bonuses inflate clearly-irrelevant roles (e.g. an HR role at a top company).
+    bonus = (_recency_boost(job) + _company_boost(job.company)) if base >= 50 else 0
+    rk.rank_score = max(0, min(100, base + bonus))
     rk.rank_breakdown = payload.get("breakdown") or {}
     rk.rank_reasoning = payload.get("reasoning") or ""
     ak = payload.get("ats_keywords") or []

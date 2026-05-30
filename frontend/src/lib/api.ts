@@ -67,6 +67,7 @@ export type User = {
   avatar_url?: string | null;
   is_admin: boolean;
   has_resume: boolean;
+  experience_pref?: string; // 'fresher' | 'all'
 };
 
 export type TokenResponse = {
@@ -204,6 +205,11 @@ export const api = {
       body: JSON.stringify({ credential }),
     }),
   me: () => http<User>('/api/auth/me'),
+  setExperiencePref: (pref: 'fresher' | 'all') =>
+    http<User>('/api/auth/me', {
+      method: 'PATCH',
+      body: JSON.stringify({ experience_pref: pref }),
+    }),
 
   // ── résumé ──
   uploadResume: (file: File) => {

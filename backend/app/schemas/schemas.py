@@ -227,6 +227,11 @@ class UserOut(BaseModel):
     avatar_url: Optional[str] = None
     is_admin: bool = False
     has_resume: bool = False
+    experience_pref: str = "fresher"  # 'fresher' (entry-only) | 'all'
+
+
+class PreferencesUpdate(BaseModel):
+    experience_pref: str = Field(pattern="^(fresher|all)$")
 
 
 class TokenResponse(BaseModel):

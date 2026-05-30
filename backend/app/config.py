@@ -130,7 +130,7 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
     # Max résumé upload size (MB) and how many jobs to rank per user per run.
     max_resume_mb: int = 5
-    max_ranks_per_user: int = 12
+    max_ranks_per_user: int = 30
     # Auto-cleanup: delete jobs older than this many days that nobody applied
     # to / tailored — keeps the shared pool fresh and small. 0 disables.
     job_retention_days: int = 30

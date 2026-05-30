@@ -14,6 +14,7 @@ from app.db.session import get_db
 from app.schemas.schemas import (
     GoogleAuthRequest,
     LoginRequest,
+    PreferencesUpdate,
     SignupRequest,
     TokenResponse,
     UserOut,
@@ -39,6 +40,7 @@ def _user_out(db: Session, user: models.User) -> UserOut:
         avatar_url=user.avatar_url,
         is_admin=user.is_admin,
         has_resume=_has_resume(db, user.id),
+        experience_pref=user.experience_pref or "fresher",
     )
 
 
@@ -75,6 +77,39 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
 @router.get("/me", response_model=UserOut)
 def me(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return _user_out(db, user)
+
+
+@router.patch("/me", response_model=UserOut)
+def update_me(
+    payload: PreferencesUpdate,
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update the current user's preferences (e.g. fresher mode). Switching to
+    fresher immediately removes already-ranked senior jobs from the shortlist
+    (tailored/applied ones are kept)."""
+    user.experience_pref = payload.experience_pref
+    if payload.experience_pref == "fresher":
+        from app.services.experience_filter import is_fresher_friendly
+
+        pairs = (
+            db.query(models.Ranking, models.Job)
+            .join(models.Job, models.Job.id == models.Ranking.job_id)
+            .filter(models.Ranking.user_id == user.id, models.Ranking.status == "ranked")
+            .all()
+        )
+        to_del = [
+            rk.id
+            for rk, job in pairs
+            if not is_fresher_friendly(job.title or "", job.description or "")
+        ]
+        if to_del:
+            db.query(models.Ranking).filter(models.Ranking.id.in_(to_del)).delete(
+                synchronize_session=False
+            )
+    db.commit()
+    db.refresh(user)
     return _user_out(db, user)
 
 

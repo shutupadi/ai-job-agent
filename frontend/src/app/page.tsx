@@ -36,6 +36,17 @@ export default function HomePage() {
     }
   }
 
+  const fresher = (user?.experience_pref ?? 'fresher') === 'fresher';
+  async function toggleFresher() {
+    try {
+      await api.setExperiencePref(fresher ? 'all' : 'fresher');
+      await refresh();
+      await load();
+    } catch (e: any) {
+      alert(e.message);
+    }
+  }
+
   if (err) return <p className="text-bad">Error: {err}</p>;
   if (!data) return <p className="text-muted">Loading…</p>;
 
@@ -55,6 +66,13 @@ export default function HomePage() {
             </span>
             {data.llm_model && <span className="pill-mute">LLM: {data.llm_model}</span>}
             <span className="pill-mute">shortlist ≥ {data.min_rank_to_apply}</span>
+            <button
+              onClick={toggleFresher}
+              title="Fresher mode shows only entry-level roles (recommended for new grads)"
+              className={fresher ? 'pill-good' : 'pill-mute'}
+            >
+              {fresher ? '🎓 Fresher mode: ON' : 'Fresher mode: OFF'}
+            </button>
           </div>
         </div>
         <button onClick={trigger} className="btn" disabled={busy}>

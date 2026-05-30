@@ -83,29 +83,37 @@ services:
       # Auto-cleanup old jobs nobody acted on.
       - key: JOB_RETENTION_DAYS
         value: "30"
+      # More sources = more relevant candidates (top product cos + a bank).
       - key: GREENHOUSE_BOARDS
-        value: "stripe,databricks,figma"
+        value: "stripe,databricks,airbnb,coinbase,robinhood,datadog"
       - key: LEVER_COMPANIES
-        value: "ramp,scaleai"
+        value: "ramp,scaleai,brex"
       - key: YC_QUERY
         value: "software engineer"
       - key: ENABLE_WORKDAY
         value: "true"
       - key: ENABLE_ORACLE
         value: "true"
+      # Best-effort LinkedIn (public guest listings; may be rate-limited from a
+      # datacenter IP — Adzuna API is the reliable high-volume upgrade).
+      - key: ENABLE_LINKEDIN
+        value: "true"
+      - key: LINKEDIN_MAX
+        value: "15"
       - key: WORKDAY_TENANTS
-        value: "ms.wd5.myworkdayjobs.com|ms|External|Morgan Stanley"
+        value: "ms.wd5.myworkdayjobs.com|ms|External|Morgan Stanley,nvidia.wd5.myworkdayjobs.com|nvidia|NVIDIAExternalCareerSite|NVIDIA"
       - key: ORACLE_TENANTS
         value: "jpmc.fa.oraclecloud.com|CX_1001|JPMorgan Chase"
-      # Free-tier resource caps (keep the run small + quick):
+      # Resource caps (keep each fetch bounded for the free 512MB instance):
       - key: WORKDAY_MAX_PER_TENANT
         value: "8"
       - key: ORACLE_MAX_PER_TENANT
         value: "8"
-      - key: MAX_RANKS_PER_RUN
-        value: "8"
+      # Per-user shortlist size + pacing (paid gateway → faster).
+      - key: MAX_RANKS_PER_USER
+        value: "30"
       - key: LLM_CALL_DELAY_SECONDS
-        value: "2"
+        value: "1"
 
 databases:
   - name: ai-job-agent-db
