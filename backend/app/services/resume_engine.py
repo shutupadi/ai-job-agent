@@ -25,6 +25,7 @@ REQUIRED_KEYS = {"name", "email", "phone", "summary", "skills", "experience"}
 
 
 def load_master_resume() -> dict:
+    """File-based master résumé — used as a fallback / for the single-user CLI."""
     path = Path(settings.data_dir) / "master_resume.json"
     if not path.exists():
         # fall back to example if user hasn't customised yet
@@ -36,20 +37,35 @@ def load_master_resume() -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _validate(resume: dict) -> None:
+def load_user_resume(db: Session, user_id: str) -> dict | None:
+    """A specific user's active (uploaded + parsed) master résumé, or None."""
+    row = (
+        db.query(models.Resume)
+        .filter(models.Resume.user_id == user_id, models.Resume.is_active.is_(True))
+        .order_by(models.Resume.created_at.desc())
+        .first()
+    )
+    return row.parsed_json if row else None
+
+
+def _validate(resume: dict, master: dict) -> None:
     missing = REQUIRED_KEYS - set(resume.keys())
     if missing:
         raise ValueError(f"Tailored resume missing keys: {missing}")
-    # Lock identity fields to the master resume — Claude must not change them
-    master = load_master_resume()
+    # Lock identity fields to the master résumé — the LLM must not change them.
     for k in ("name", "email", "phone"):
-        if resume.get(k) != master.get(k):
+        if master.get(k) and resume.get(k) != master.get(k):
             log.warning(f"Tailored resume changed identity field '{k}'; reverting.")
             resume[k] = master.get(k)
 
 
-def tailor_for_job(db: Session, job: models.Job) -> models.ResumeVersion:
-    master = load_master_resume()
+def tailor_for_job(
+    db: Session,
+    job: models.Job,
+    resume_json: dict | None = None,
+    user_id: str | None = None,
+) -> models.ResumeVersion:
+    master = resume_json or load_master_resume()
     prompt = llm.load_prompt("tailor_resume").format(
         master_resume_json=json.dumps(master, indent=2),
         job_title=job.title,
@@ -63,15 +79,17 @@ def tailor_for_job(db: Session, job: models.Job) -> models.ResumeVersion:
     )
     if not isinstance(tailored, dict):
         raise ValueError("Tailored resume is not a JSON object")
-    _validate(tailored)
+    _validate(tailored, master)
     ats_keywords = tailored.pop("ats_keywords", None) or []
 
-    # Render PDF
+    # Render PDF (namespaced by user so files don't collide across accounts).
     safe_company = "".join(c for c in job.company.lower() if c.isalnum() or c in "-_")[:32]
-    pdf_path = Path(settings.storage_dir) / "resumes" / f"{safe_company}_{job.id[:8]}.pdf"
+    uid = (user_id or "shared")[:8]
+    pdf_path = Path(settings.storage_dir) / "resumes" / f"{uid}_{safe_company}_{job.id[:8]}.pdf"
     render_resume_pdf(tailored, pdf_path)
 
     version = models.ResumeVersion(
+        user_id=user_id,
         job_id=job.id,
         label=f"{job.company} – {job.title}"[:255],
         pdf_path=str(pdf_path),

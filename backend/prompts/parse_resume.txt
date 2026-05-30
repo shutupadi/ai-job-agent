@@ -1,0 +1,33 @@
+You are a precise résumé parser. Convert the raw résumé text below into a single
+JSON object with EXACTLY the schema shown. Use ONLY information present in the
+text — never invent skills, employers, dates, metrics, or links. If a field is
+missing, use an empty string "" or an empty list []. Categorise skills sensibly
+(languages / frameworks / infra / concepts); put anything that doesn't fit into
+"concepts".
+
+SCHEMA
+======
+{{
+  "name": "<full name>",
+  "email": "<email or ''>",
+  "phone": "<phone or ''>",
+  "links": {{ "linkedin": "", "github": "", "portfolio": "" }},
+  "summary": "<2-3 sentence professional summary drawn from the résumé>",
+  "skills": {{ "languages": [], "frameworks": [], "infra": [], "concepts": [] }},
+  "experience": [
+    {{ "company": "", "title": "", "location": "", "start": "", "end": "", "bullets": [] }}
+  ],
+  "projects": [
+    {{ "name": "", "stack": [], "bullets": [] }}
+  ],
+  "education": [
+    {{ "school": "", "degree": "", "start": "", "end": "", "details": "" }}
+  ],
+  "achievements": []
+}}
+
+RÉSUMÉ TEXT
+===========
+{resume_text}
+
+Output STRICT JSON only — no prose, no markdown fences.

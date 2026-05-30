@@ -1,0 +1,16 @@
+Aditya Sharma
+aditya.sharma@email.com | +91-9876543210 | github.com/adisharma
+
+SUMMARY
+Final-year CS student skilled in Python, FastAPI and machine learning.
+
+SKILLS
+Languages: Python, Java, C++. Frameworks: FastAPI, React, PyTorch. Infra: Docker, AWS, PostgreSQL.
+
+EXPERIENCE
+SWE Intern, Acme Corp, Bangalore (May 2025 - Jul 2025)
+- Built a REST API in FastAPI serving 3k requests/sec.
+- Cut latency 40% with Redis caching.
+
+EDUCATION
+B.Tech Computer Science, IIT Demo, 2022-2026, CGPA 8.9
