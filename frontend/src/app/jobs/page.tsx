@@ -133,9 +133,6 @@ export default function JobsPage() {
           Remote only
         </label>
         <button onClick={() => load()} className="btn-ghost">Filter</button>
-        <a href={api.rankOnlyCsvUrl} className="btn-ghost" download>
-          Download shortlist CSV
-        </a>
       </div>
 
       <div className="space-y-3">

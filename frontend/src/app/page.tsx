@@ -3,11 +3,14 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api, DashboardSummary } from '@/lib/api';
+import { useAuth } from './AuthProvider';
+import ResumeUpload from './ResumeUpload';
 
 export default function HomePage() {
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { user, refresh } = useAuth();
 
   async function load() {
     try {
@@ -58,6 +61,19 @@ export default function HomePage() {
           {busy ? 'Triggering…' : 'Run pipeline now'}
         </button>
       </header>
+
+      {user && !user.has_resume && (
+        <section className="card border-l-4 border-l-warn">
+          <h2 className="font-semibold">👋 Start here — upload your résumé</h2>
+          <p className="text-sm text-muted mt-1">
+            We parse it with AI and match fresher jobs to <b>your</b> skills.
+            Until you upload one, there's nothing to rank for you.
+          </p>
+          <div className="mt-3">
+            <ResumeUpload onUploaded={() => refresh()} />
+          </div>
+        </section>
+      )}
 
       {/* Review queue CTA — the heart of the approval workflow */}
       <Link

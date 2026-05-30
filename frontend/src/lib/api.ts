@@ -1,23 +1,88 @@
-// Tiny typed fetch wrapper around the FastAPI backend.
+// Tiny typed fetch wrapper around the FastAPI backend (with auth).
 
 const BASE =
   (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_BASE) ||
   'http://localhost:8000';
 
+const TOKEN_KEY = 'aijob_token';
+
+function getToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+function setToken(t: string) {
+  try {
+    localStorage.setItem(TOKEN_KEY, t);
+  } catch {}
+}
+function clearToken() {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {}
+}
+
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    cache: 'no-store',
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  });
+  const token = getToken();
+  const isForm =
+    typeof FormData !== 'undefined' && init?.body instanceof FormData;
+  const headers: Record<string, string> = {
+    ...(isForm ? {} : { 'Content-Type': 'application/json' }),
+    ...((init?.headers as Record<string, string>) || {}),
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE}${path}`, { cache: 'no-store', ...init, headers });
+
+  if (res.status === 401) {
+    clearToken();
+    if (typeof window !== 'undefined' && !/^\/(login|signup)/.test(location.pathname)) {
+      location.href = '/login';
+    }
+    throw new Error('Not authenticated');
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`${res.status} ${res.statusText} – ${text}`);
+    // FastAPI errors are {"detail": "..."} — surface that if present.
+    let msg = `${res.status} ${res.statusText}`;
+    try {
+      const j = JSON.parse(text);
+      if (j?.detail) msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail);
+    } catch {
+      if (text) msg += ` – ${text}`;
+    }
+    throw new Error(msg);
   }
   return res.json() as Promise<T>;
 }
 
-// ── Types (mirror backend schemas) ──
+// ── Types ──
+export type User = {
+  id: string;
+  email: string;
+  name?: string | null;
+  avatar_url?: string | null;
+  is_admin: boolean;
+  has_resume: boolean;
+};
+
+export type TokenResponse = {
+  access_token: string;
+  token_type: string;
+  user: User;
+};
+
+export type MasterResume = {
+  id?: string | null;
+  filename?: string | null;
+  parsed_json?: any;
+  created_at?: string | null;
+  has_resume: boolean;
+};
+
 export type Job = {
   id: string;
   source: string;
@@ -117,6 +182,38 @@ export type DashboardSummary = {
 
 export const api = {
   base: BASE,
+
+  // ── auth/token ──
+  getToken,
+  setToken,
+  clearToken,
+  isAuthed: () => !!getToken(),
+  signup: (email: string, password: string, name?: string) =>
+    http<TokenResponse>('/api/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, name }),
+    }),
+  login: (email: string, password: string) =>
+    http<TokenResponse>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
+  google: (credential: string) =>
+    http<TokenResponse>('/api/auth/google', {
+      method: 'POST',
+      body: JSON.stringify({ credential }),
+    }),
+  me: () => http<User>('/api/auth/me'),
+
+  // ── résumé ──
+  uploadResume: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return http<MasterResume>('/api/resume/upload', { method: 'POST', body: fd });
+  },
+  myResume: () => http<MasterResume>('/api/resume/me'),
+
+  // ── jobs ──
   dashboard: () => http<DashboardSummary>('/api/dashboard/summary'),
   jobs: (params: Record<string, string | number | boolean> = {}) => {
     const q = new URLSearchParams();
@@ -129,7 +226,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(note ? { note } : {}),
     }),
-  rankOnlyCsvUrl: `${BASE}/api/jobs/export/rank-only.csv`,
+
+  // ── applications ──
   applications: (params: Record<string, string | number> = {}) => {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) q.set(k, String(v));
@@ -144,9 +242,16 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ status }),
     }),
+
+  // ── runs / settings / tailor ──
   runs: () => http<Run[]>('/api/runs'),
   triggerRun: () => http<{ status: string }>('/api/runs/trigger', { method: 'POST' }),
   settings: () => http<Record<string, any>>('/api/settings'),
+  patchSettings: (body: Record<string, any>) =>
+    http<Record<string, any>>('/api/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
   tailor: (job_id: string) =>
     http<TailorResponse>(`/api/resume/tailor`, {
       method: 'POST',
