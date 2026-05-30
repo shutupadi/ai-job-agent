@@ -378,13 +378,11 @@ async def run(opts: Opts) -> None:
         new_count = len(new_jobs)
     log.info(f"Ingested {new_count} new LinkedIn jobs into the DB (source=linkedin).")
 
-    if opts.rank and new_count:
-        from app.services.pipeline import rank_new_jobs
-
-        n = rank_new_jobs(settings.max_ranks_per_run)
-        log.info(f"Ranked {n} newly ingested jobs.")
-    elif new_count:
-        log.info("Run with --rank to score them now, or wait for the next pipeline run.")
+    if new_count:
+        # Ranking is per-user now (multi-tenant), so it happens when each user's
+        # pipeline runs against their résumé — not here. This runner only feeds
+        # the shared job pool.
+        log.info("Jobs added to the shared pool; they'll be ranked per-user on the next run.")
 
     log.info("LinkedIn discovery done. Review the shortlist in the dashboard.")
 

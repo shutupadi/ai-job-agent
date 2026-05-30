@@ -1,38 +1,66 @@
-"""Job endpoints — list / get / search / mark-applied / rank-only export."""
+"""Job endpoints (per-user) — ranked list / get / mark-applied."""
 
 from __future__ import annotations
 
 import datetime as dt
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import or_
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
+from app.auth.deps import get_current_user
 from app.db import models
 from app.db.session import get_db
 from app.schemas.schemas import JobListOut, JobOut, MarkAppliedRequest
-from app.services import export as export_svc
 from app.utils.logger import log
 
 router = APIRouter()
 
 
+def _job_out(job: models.Job, rk: Optional[models.Ranking]) -> JobOut:
+    """Merge a shared Job with THIS user's Ranking into the API shape."""
+    return JobOut(
+        id=job.id,
+        source=job.source,
+        external_id=job.external_id,
+        url=job.url,
+        title=job.title,
+        company=job.company,
+        location=job.location,
+        remote=job.remote,
+        department=job.department,
+        description=job.description,
+        salary_text=job.salary_text,
+        posted_at=job.posted_at,
+        discovered_at=job.discovered_at,
+        rank_score=rk.rank_score if rk else None,
+        rank_breakdown=rk.rank_breakdown if rk else None,
+        rank_reasoning=rk.rank_reasoning if rk else None,
+        ats_keywords=rk.ats_keywords if rk else None,
+        status=rk.status if rk else "new",
+        auto_apply=job.auto_apply,
+        applied_manually_at=rk.applied_manually_at if rk else None,
+    )
+
+
 @router.get("", response_model=JobListOut)
 def list_jobs(
     db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
     q: Optional[str] = Query(None, description="Free-text search on title/company"),
     source: Optional[str] = None,
     min_rank: Optional[int] = None,
     status: Optional[str] = None,
     remote_only: bool = False,
-    auto_apply: Optional[bool] = Query(
-        None, description="true=auto-applicable only, false=rank-only (manual) only"
-    ),
     limit: int = Query(50, le=200),
     offset: int = 0,
 ):
-    qry = db.query(models.Job)
+    """Jobs ranked for the current user, best first."""
+    qry = db.query(models.Job, models.Ranking).join(
+        models.Ranking,
+        and_(models.Ranking.job_id == models.Job.id, models.Ranking.user_id == user.id),
+    )
     if q:
         like = f"%{q.lower()}%"
         qry = qry.filter(
@@ -45,45 +73,36 @@ def list_jobs(
     if source:
         qry = qry.filter(models.Job.source == source)
     if min_rank is not None:
-        qry = qry.filter(models.Job.rank_score >= min_rank)
+        qry = qry.filter(models.Ranking.rank_score >= min_rank)
     if status:
-        qry = qry.filter(models.Job.status == status)
+        qry = qry.filter(models.Ranking.status == status)
     if remote_only:
         qry = qry.filter(models.Job.remote.is_(True))
-    if auto_apply is not None:
-        qry = qry.filter(models.Job.auto_apply.is_(auto_apply))
+
     total = qry.count()
-    items = (
-        qry.order_by(models.Job.rank_score.desc().nullslast(), models.Job.discovered_at.desc())
+    rows = (
+        qry.order_by(
+            models.Ranking.rank_score.desc().nullslast(),
+            models.Job.discovered_at.desc(),
+        )
         .offset(offset)
         .limit(limit)
         .all()
     )
-    return JobListOut(items=[JobOut.model_validate(i) for i in items], total=total)
-
-
-# NOTE: declared before "/{job_id}" so the literal path isn't captured as an id.
-@router.get("/export/rank-only.csv")
-def export_rank_only(
-    db: Session = Depends(get_db),
-    min_rank: Optional[int] = Query(None, description="Override MIN_RANK_TO_APPLY"),
-):
-    """CSV worklist of rank-only jobs (LinkedIn/Naukri/…) to apply to by hand."""
-    csv_text = export_svc.rank_only_csv(db, min_rank=min_rank)
-    stamp = dt.datetime.now().strftime("%Y%m%d")
-    return Response(
-        content=csv_text,
-        media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="rank_only_{stamp}.csv"'},
-    )
+    return JobListOut(items=[_job_out(j, rk) for j, rk in rows], total=total)
 
 
 @router.get("/{job_id}", response_model=JobOut)
-def get_job(job_id: str, db: Session = Depends(get_db)):
+def get_job(
+    job_id: str,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
     job = db.get(models.Job, job_id)
     if not job:
         raise HTTPException(404, "Job not found")
-    return JobOut.model_validate(job)
+    rk = db.query(models.Ranking).filter_by(user_id=user.id, job_id=job_id).first()
+    return _job_out(job, rk)
 
 
 @router.post("/{job_id}/mark-applied", response_model=JobOut)
@@ -91,28 +110,30 @@ def mark_applied(
     job_id: str,
     payload: Optional[MarkAppliedRequest] = None,
     db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
 ):
-    """Mark a (typically rank-only) job as applied-to manually.
-
-    Flips the job to 'applied', stamps applied_manually_at, and ensures there's
-    a submitted Application row flagged manual=True so dashboards stay accurate.
-    """
+    """Record that the current user applied to this job (by hand)."""
     job = db.get(models.Job, job_id)
     if not job:
         raise HTTPException(404, "Job not found")
 
     when = (payload.applied_at if payload else None) or dt.datetime.utcnow()
-    job.status = "applied"
-    job.applied_manually_at = when
+
+    rk = db.query(models.Ranking).filter_by(user_id=user.id, job_id=job_id).first()
+    if rk is None:
+        rk = models.Ranking(user_id=user.id, job_id=job_id)
+        db.add(rk)
+    rk.status = "applied"
+    rk.applied_manually_at = when
 
     app_row = (
         db.query(models.Application)
-        .filter(models.Application.job_id == job_id)
+        .filter_by(user_id=user.id, job_id=job_id)
         .order_by(models.Application.created_at.desc())
         .first()
     )
     if app_row is None:
-        app_row = models.Application(job_id=job_id, attempts=0)
+        app_row = models.Application(user_id=user.id, job_id=job_id, attempts=0)
         db.add(app_row)
     app_row.manual = True
     app_row.status = "submitted"
@@ -122,4 +143,5 @@ def mark_applied(
     db.refresh(job)
     if payload and payload.note:
         log.info(f"Manual apply note for {job.company} – {job.title}: {payload.note}")
-    return JobOut.model_validate(job)
+    rk = db.query(models.Ranking).filter_by(user_id=user.id, job_id=job_id).first()
+    return _job_out(job, rk)

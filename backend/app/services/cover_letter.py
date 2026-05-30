@@ -35,9 +35,9 @@ def generate_for_job(
 
     # Sign with the résumé's own name (multi-user) — fall back to env candidate.
     signer = (resume_json or {}).get("name") or settings.candidate_full_name
-    safe_company = "".join(c for c in job.company.lower() if c.isalnum() or c in "-_")[:32]
-    uid = (user_id or "shared")[:8]
-    pdf_path = Path(settings.storage_dir) / "cover_letters" / f"{uid}_{safe_company}_{job.id[:8]}.pdf"
+    import uuid as _uuid
+
+    pdf_path = Path(settings.storage_dir) / "cover_letters" / f"{_uuid.uuid4().hex}.pdf"
     render_cover_letter_pdf(text, signer, pdf_path)
 
     cl = models.CoverLetter(

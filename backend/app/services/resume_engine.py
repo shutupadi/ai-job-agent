@@ -82,10 +82,12 @@ def tailor_for_job(
     _validate(tailored, master)
     ats_keywords = tailored.pop("ats_keywords", None) or []
 
-    # Render PDF (namespaced by user so files don't collide across accounts).
-    safe_company = "".join(c for c in job.company.lower() if c.isalnum() or c in "-_")[:32]
-    uid = (user_id or "shared")[:8]
-    pdf_path = Path(settings.storage_dir) / "resumes" / f"{uid}_{safe_company}_{job.id[:8]}.pdf"
+    # Random, unguessable filename — acts as a capability URL under /files so one
+    # user can't enumerate another's PDFs. (Proper signed/auth'd downloads are a
+    # scale-later upgrade.)
+    import uuid as _uuid
+
+    pdf_path = Path(settings.storage_dir) / "resumes" / f"{_uuid.uuid4().hex}.pdf"
     render_resume_pdf(tailored, pdf_path)
 
     version = models.ResumeVersion(
