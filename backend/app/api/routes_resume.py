@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.auth.deps import get_current_user
+from app.auth.rate_limit import RateLimiter
 from app.config import settings
 from app.db import models
 from app.db.session import get_db
@@ -23,6 +24,37 @@ from app.services import cover_letter as cover_letter_svc
 from app.services import resume_engine, resume_parser
 
 router = APIRouter()
+
+_upload_rl = RateLimiter(
+    "resume_upload", times=settings.rl_upload_times, seconds=settings.rl_upload_seconds
+)
+
+# Allowed résumé types by extension + magic-byte signature. We sniff the bytes so
+# a renamed executable (e.g. evil.pdf) can't slip past the extension check.
+_ALLOWED_EXTS = (".pdf", ".docx", ".txt", ".md")
+
+
+def _validate_upload(filename: str, data: bytes) -> None:
+    """Reject empty / oversized / wrong-type uploads before we parse anything."""
+    if not data:
+        raise HTTPException(400, "Empty file.")
+    if len(data) > settings.max_resume_mb * 1024 * 1024:
+        raise HTTPException(413, f"File too large (max {settings.max_resume_mb} MB).")
+
+    name = (filename or "").lower()
+    ext = next((e for e in _ALLOWED_EXTS if name.endswith(e)), None)
+    if ext is None:
+        raise HTTPException(415, "Unsupported file type. Upload a PDF, DOCX, TXT or MD.")
+
+    head = data[:8]
+    if ext == ".pdf" and not head.startswith(b"%PDF"):
+        raise HTTPException(415, "File doesn't look like a real PDF.")
+    if ext == ".docx" and not head.startswith(b"PK\x03\x04"):
+        # .docx is a ZIP container — must start with the ZIP local-file header.
+        raise HTTPException(415, "File doesn't look like a real DOCX.")
+    # Reject obvious binaries masquerading as text.
+    if ext in (".txt", ".md") and b"\x00" in data[:1024]:
+        raise HTTPException(415, "Text file appears to be binary.")
 
 
 def _active_resume(db: Session, user_id: str) -> models.Resume | None:
@@ -46,7 +78,9 @@ def my_resume(db: Session = Depends(get_db), user: models.User = Depends(get_cur
     )
 
 
-@router.post("/upload", response_model=MasterResumeOut)
+@router.post(
+    "/upload", response_model=MasterResumeOut, dependencies=[Depends(_upload_rl)]
+)
 async def upload_resume(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -54,10 +88,7 @@ async def upload_resume(
 ):
     """Upload a PDF/DOCX/TXT résumé → AI parses it → becomes your active master."""
     data = await file.read()
-    if not data:
-        raise HTTPException(400, "Empty file.")
-    if len(data) > settings.max_resume_mb * 1024 * 1024:
-        raise HTTPException(413, f"File too large (max {settings.max_resume_mb} MB).")
+    _validate_upload(file.filename or "", data)
     try:
         text, parsed = resume_parser.extract_and_parse(file.filename or "", data)
     except ValueError as e:

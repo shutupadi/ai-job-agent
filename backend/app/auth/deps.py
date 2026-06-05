@@ -9,10 +9,16 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.auth.security import decode_token
+from app.config import settings
 from app.db import models
 from app.db.session import get_db
 
 _bearer = HTTPBearer(auto_error=False)
+
+
+def is_admin(user: "models.User") -> bool:
+    """Admin if flagged on the row OR listed in ADMIN_EMAILS (request-time)."""
+    return bool(getattr(user, "is_admin", False)) or settings.is_admin_email(user.email)
 
 
 def get_current_user(
@@ -30,6 +36,15 @@ def get_current_user(
     user = db.get(models.User, user_id) if user_id else None
     if user is None or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found or inactive")
+    return user
+
+
+def get_current_admin(
+    user: models.User = Depends(get_current_user),
+) -> models.User:
+    """Require an admin (row flag or ADMIN_EMAILS membership); 403 otherwise."""
+    if not is_admin(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin access required")
     return user
 
 

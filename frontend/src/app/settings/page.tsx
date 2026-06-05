@@ -6,10 +6,11 @@ import { useAuth } from '../AuthProvider';
 import ResumeUpload from '../ResumeUpload';
 
 export default function SettingsPage() {
-  const { user, refresh } = useAuth();
+  const { user, refresh, logout } = useAuth();
   const [s, setS] = useState<Record<string, any> | null>(null);
   const [resume, setResume] = useState<MasterResume | null>(null);
   const [msg, setMsg] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     try {
@@ -34,6 +35,23 @@ export default function SettingsPage() {
       setTimeout(() => setMsg(''), 3500);
     } catch (e: any) {
       setMsg(e.message || 'Save failed');
+    }
+  }
+
+  async function deleteAccount() {
+    const sure = prompt(
+      'This permanently deletes your account and ALL your data (résumé, rankings, ' +
+        'tailored documents, applications). This cannot be undone.\n\n' +
+        'Type DELETE to confirm:',
+    );
+    if (sure !== 'DELETE') return;
+    setDeleting(true);
+    try {
+      await api.deleteAccount();
+      logout();
+    } catch (e: any) {
+      alert(e.message || 'Delete failed');
+      setDeleting(false);
     }
   }
 
@@ -126,6 +144,21 @@ export default function SettingsPage() {
           <ReadOnly label="Include remote" on={s.include_remote} extra="" />
           <ReadOnly label="Include international" on={s.include_international} extra="" />
         </div>
+      </div>
+
+      {/* Danger zone */}
+      <div className="card border-l-4 border-l-bad space-y-2">
+        <h2 className="font-semibold text-bad">Danger zone</h2>
+        <p className="text-sm text-muted">
+          Permanently delete your account and all associated data. This cannot be undone.
+        </p>
+        <button
+          onClick={deleteAccount}
+          disabled={deleting}
+          className="btn bg-red-600 hover:bg-red-700 text-white"
+        >
+          {deleting ? 'Deleting…' : 'Delete my account & data'}
+        </button>
       </div>
     </div>
   );

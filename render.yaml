@@ -51,7 +51,9 @@ services:
       - key: GOOGLE_CLIENT_SECRET
         sync: false
       - key: FRONTEND_URL
-        sync: false                  # your Vercel URL
+        sync: false                  # your Vercel URL (also the CORS allow-origin)
+      - key: ADMIN_EMAILS
+        sync: false                  # comma-separated admin emails → /admin access
       - key: GROQ_API_KEY
         sync: false
       - key: GEMINI_API_KEY

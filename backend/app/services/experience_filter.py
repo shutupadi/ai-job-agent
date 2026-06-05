@@ -112,6 +112,73 @@ def is_fresher_friendly(title: str, description: str) -> bool:
     return True
 
 
+# ── Per-user level matching (experience_pref = 'all') ─────────────────
+# Titles for the very top of the IC/management ladder — too senior for anyone
+# who isn't already senior themselves.
+_VERY_SENIOR_RE = re.compile(
+    r"\b(?:staff|principal|distinguished|fellow|"
+    r"director|head|vp|vice\s+president|chief|cto|ceo|"
+    r"manager|mgr)\b",
+    re.IGNORECASE,
+)
+
+
+def candidate_band(years: int) -> str:
+    """Coarse seniority band from total years (mirrors ranking.experience_level)."""
+    if years < 2:
+        return "entry"
+    if years < 6:
+        return "mid"
+    return "senior"
+
+
+def level_ok(title: str, description: str, years: int, fresher: bool = False) -> bool:
+    """Per-user experience-level gate for experience_pref='all'.
+
+    Keeps the candidate's own band roughly in range:
+      • fresher mode → strict entry-only gate (is_fresher_friendly).
+      • entry band   → no senior titles; stated min-years ≤ 3.
+      • mid band     → no very-senior titles (staff/principal/director/manager/…);
+                       stated min-years ≤ years + 4; not a pure internship.
+      • senior band  → drop only internships / explicit new-grad-only roles.
+
+    Biased toward keeping ambiguous roles — the LLM ranker is the second line of
+    defence. Returns True = keep.
+    """
+    title = title or ""
+    description = description or ""
+    if fresher:
+        return is_fresher_friendly(title, description)
+
+    band = candidate_band(years)
+    minyrs = min_required_years(f"{title}\n{description}")
+    intern_title = bool(re.search(r"\bintern(?:ship)?\b", title, re.IGNORECASE))
+    newgrad_only = intern_title or bool(
+        re.search(r"\bnew[\s-]?grad(?:uate)?\b|\bcampus\s+hire\b", title, re.IGNORECASE)
+    )
+
+    if band == "entry":
+        if _has_senior_title(title):
+            return False
+        if minyrs is not None and minyrs > 3:
+            return False
+        return True
+
+    if band == "mid":
+        if _VERY_SENIOR_RE.search(title):
+            return False
+        if intern_title:
+            return False
+        if minyrs is not None and minyrs > years + 4:
+            return False
+        return True
+
+    # senior band: keep everything except clearly junior-only postings.
+    if newgrad_only and not _has_senior_title(title):
+        return False
+    return True
+
+
 def keep_rawjob(raw: "RawJob") -> bool:
     """Decide whether a freshly fetched posting passes the experience gate."""
     if not settings.experience_filter_enabled:

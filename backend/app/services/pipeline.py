@@ -87,6 +87,20 @@ def prune_old_jobs(days: int) -> int:
         return deleted
 
 
+def passes_prefilter(
+    technical: bool, years: int, fresher: bool, title: str, description: str
+) -> bool:
+    """Cheap per-user keep/drop decision applied BEFORE any LLM call:
+      1. experience-level gate (fresher → entry-only; else level window),
+      2. role-direction hard drop (a technical CV never sees sales/HR/etc.).
+    """
+    if not experience_filter.level_ok(title, description, years, fresher=fresher):
+        return False
+    if relevance.is_wrong_direction(technical, title):
+        return False
+    return True
+
+
 def rank_jobs_for_user(
     user_id: str, resume_json: dict, limit: int, fresher: bool = False
 ) -> int:
@@ -107,17 +121,25 @@ def rank_jobs_for_user(
         )
         rows = [(j.id, j.title, j.description) for j in cands]
 
-    if fresher:
-        rows = [r for r in rows if experience_filter.is_fresher_friendly(r[1], r[2])]
-
     terms = relevance.candidate_terms(resume_json)
-    technical = relevance.is_technical(terms)
+    technical = relevance.role_is_technical(resume_json, terms)
+    years = ranking.candidate_years(resume_json)
+
+    # Per-user pre-filter (before spending any LLM call).
+    before = len(rows)
+    rows = [r for r in rows if passes_prefilter(technical, years, fresher, r[1], r[2])]
+    dropped = before - len(rows)
+
     rows.sort(
         key=lambda r: relevance.relevance_score(terms, technical, r[1], r[2]),
         reverse=True,
     )
     new_ids = [r[0] for r in rows[:limit]]
     if not new_ids:
+        log.info(
+            f"No rankable jobs for user {user_id[:8]} "
+            f"(fresher={fresher}, years={years}, pre-filtered {dropped}/{before})"
+        )
         return 0
 
     log.info(f"Ranking {len(new_ids)} jobs for user {user_id[:8]} (fresher={fresher})")

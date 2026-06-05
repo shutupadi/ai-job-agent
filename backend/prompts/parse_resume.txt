@@ -5,6 +5,26 @@ missing, use an empty string "" or an empty list []. Categorise skills sensibly
 (languages / frameworks / infra / concepts); put anything that doesn't fit into
 "concepts".
 
+CLASSIFICATION GUIDANCE (used to match the right jobs)
+======================================================
+- experience_years: total years of PROFESSIONAL + full-time-equivalent
+  internship experience. Sum the durations of jobs/internships from their dates.
+  Pure student/coursework projects do NOT count. New grad with only short
+  internships ⇒ 0 or 1. Round to a whole number.
+- seniority: one of "entry" (0–2 yrs / student / new-grad), "mid" (2–6 yrs),
+  or "senior" (6+ yrs OR clear lead/staff/principal/management history).
+- role_direction: the candidate's PRIMARY professional track in 1–4 words, e.g.
+  "software engineering", "backend engineering", "data science",
+  "machine learning", "devops", "product management", "sales", "marketing".
+  Infer it from their titles, projects and skills — do NOT default to software.
+- target_titles: 3–6 concrete job titles this person should realistically apply
+  to next, consistent with role_direction and seniority (e.g.
+  ["Software Engineer", "Backend Engineer", "SDE I"]).
+- target_job_types: subset of ["full-time","internship","contract"] they fit.
+- domains: industries/domains they have real exposure to (e.g.
+  ["fintech","e-commerce"]); [] if none stated.
+- primary_skills: the 5–10 STRONGEST, most job-relevant skills (flat list).
+
 SCHEMA
 ======
 {{
@@ -12,6 +32,12 @@ SCHEMA
   "email": "<email or ''>",
   "phone": "<phone or ''>",
   "experience_years": <number: total years of professional + internship experience, 0 if none>,
+  "seniority": "<entry|mid|senior>",
+  "role_direction": "<primary professional track, 1-4 words>",
+  "target_titles": [],
+  "target_job_types": [],
+  "domains": [],
+  "primary_skills": [],
   "links": {{ "linkedin": "", "github": "", "portfolio": "" }},
   "summary": "<2-3 sentence professional summary drawn from the résumé>",
   "skills": {{ "languages": [], "frameworks": [], "infra": [], "concepts": [] }},

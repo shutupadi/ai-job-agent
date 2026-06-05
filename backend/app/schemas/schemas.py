@@ -64,6 +64,11 @@ class MarkAppliedRequest(BaseModel):
     applied_at: Optional[dt.datetime] = None
 
 
+class RerankResponse(BaseModel):
+    status: str          # "started" | "reset"
+    cleared: int = 0     # how many ranking rows were removed
+
+
 # ── Applications ──
 class ApplicationOut(_ORM):
     id: str
@@ -232,6 +237,46 @@ class UserOut(BaseModel):
 
 class PreferencesUpdate(BaseModel):
     experience_pref: str = Field(pattern="^(fresher|all)$")
+
+
+# ── Admin (read-only visibility) ──
+class AdminResumeOut(BaseModel):
+    id: str
+    filename: Optional[str] = None
+    is_active: bool = False
+    experience_years: Optional[int] = None
+    seniority: Optional[str] = None
+    role_direction: Optional[str] = None
+    n_skills: int = 0
+    text_chars: int = 0
+    on_disk: bool = False
+    created_at: dt.datetime
+
+
+class AdminUserOut(BaseModel):
+    id: str
+    email: str
+    name: Optional[str] = None
+    is_admin: bool = False
+    is_active: bool = True
+    experience_pref: str = "fresher"
+    login_method: str = "-"
+    created_at: dt.datetime
+    n_resumes: int = 0
+    n_ranked: int = 0
+    n_shortlisted: int = 0
+    n_applied: int = 0
+    resumes: List[AdminResumeOut] = []
+
+
+class AdminStats(BaseModel):
+    total_users: int
+    active_users: int
+    users_with_resume: int
+    total_jobs: int
+    total_rankings: int
+    total_applications: int
+    last_run: Optional[RunOut] = None
 
 
 class TokenResponse(BaseModel):

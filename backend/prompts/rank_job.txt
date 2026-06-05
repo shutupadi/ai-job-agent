@@ -10,11 +10,15 @@ CANDIDATE PROFILE
 HARD RULE #1 — ROLE FIT (most important)
 ========================================
 `overall` must primarily reflect whether the JOB MATCHES THE CANDIDATE'S
-PROFESSION + SKILLS — NOT the company's fame.
-  - If the job is a DIFFERENT profession than the candidate's (e.g. a Sales /
-    Account Executive / Recruiter / HR / Marketing / Customer-Success / Support /
-    Design / Finance role for a software engineer), it is a BAD fit: `ats_match`
-    must be low and `overall` MUST be ≤ 40 — even at a prestigious company.
+PROFESSION + SKILLS (see `role_direction` and `target_titles` in the profile) —
+NOT the company's fame.
+  - If the job is a DIFFERENT profession than the candidate's `role_direction`
+    (e.g. a Sales / Account Executive / Recruiter / HR / Marketing /
+    Customer-Success / Support / Design / Finance role for a software engineer),
+    it is a BAD fit: `ats_match` must be low and `overall` MUST be ≤ 40 — even at
+    a prestigious company.
+  - If the job title is far from every entry in `target_titles` and uses none of
+    the candidate's core skills, treat it as a weak fit and score it low.
   - A famous company NEVER rescues a role the candidate isn't trained for.
     Prefer a great role-match at any company over a wrong-role at a big name.
 

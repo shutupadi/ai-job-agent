@@ -8,6 +8,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.auth.deps import get_current_user
+from app.auth.rate_limit import RateLimiter
+from app.config import settings
 from app.db import models
 from app.db.session import get_db
 from app.schemas.schemas import RunOut
@@ -15,8 +17,10 @@ from app.services.pipeline import run_pipeline
 
 router = APIRouter()
 
+_run_rl = RateLimiter("run", times=settings.rl_run_times, seconds=settings.rl_run_seconds)
 
-@router.post("/trigger")
+
+@router.post("/trigger", dependencies=[Depends(_run_rl)])
 def trigger(
     background_tasks: BackgroundTasks,
     user: models.User = Depends(get_current_user),

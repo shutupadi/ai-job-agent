@@ -162,6 +162,47 @@ export type TailorResponse = {
   cover_letter?: CoverLetterDoc | null;
 };
 
+export type RerankResponse = { status: string; cleared: number };
+
+export type AdminResume = {
+  id: string;
+  filename?: string | null;
+  is_active: boolean;
+  experience_years?: number | null;
+  seniority?: string | null;
+  role_direction?: string | null;
+  n_skills: number;
+  text_chars: number;
+  on_disk: boolean;
+  created_at: string;
+};
+
+export type AdminUser = {
+  id: string;
+  email: string;
+  name?: string | null;
+  is_admin: boolean;
+  is_active: boolean;
+  experience_pref: string;
+  login_method: string;
+  created_at: string;
+  n_resumes: number;
+  n_ranked: number;
+  n_shortlisted: number;
+  n_applied: number;
+  resumes: AdminResume[];
+};
+
+export type AdminStats = {
+  total_users: number;
+  active_users: number;
+  users_with_resume: number;
+  total_jobs: number;
+  total_rankings: number;
+  total_applications: number;
+  last_run?: Run | null;
+};
+
 export type DashboardSummary = {
   total_jobs: number;
   ranked: number;
@@ -210,6 +251,7 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ experience_pref: pref }),
     }),
+  deleteAccount: () => http<void>('/api/auth/me', { method: 'DELETE' }),
 
   // ── résumé ──
   uploadResume: (file: File) => {
@@ -232,6 +274,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(note ? { note } : {}),
     }),
+  rerank: (scope: 'ranked' | 'all' = 'ranked') =>
+    http<RerankResponse>(`/api/jobs/rerank?scope=${scope}`, { method: 'POST' }),
+  resetRankings: (scope: 'ranked' | 'all' = 'ranked') =>
+    http<RerankResponse>(`/api/jobs/reset-rankings?scope=${scope}`, { method: 'POST' }),
 
   // ── applications ──
   applications: (params: Record<string, string | number> = {}) => {
@@ -265,4 +311,9 @@ export const api = {
     }),
   forJobDocs: (job_id: string) =>
     http<TailorResponse>(`/api/resume/for-job/${job_id}`),
+
+  // ── admin (read-only) ──
+  adminStats: () => http<AdminStats>('/api/admin/stats'),
+  adminUsers: () => http<AdminUser[]>('/api/admin/users'),
+  adminRuns: () => http<Run[]>('/api/admin/runs'),
 };

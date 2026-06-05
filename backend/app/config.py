@@ -122,6 +122,11 @@ class Settings(BaseSettings):
     jwt_secret: str = "dev-insecure-change-me-please-min-32-characters-long"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24 * 7  # 7 days
+    # Comma-separated list of emails that should be treated as admins (gets the
+    # admin dashboard + global settings). Evaluated at request time, so adding an
+    # email here promotes that account without a DB migration. e.g.
+    #   ADMIN_EMAILS=you@example.com,cofounder@example.com
+    admin_emails_raw: str = Field(default="", alias="ADMIN_EMAILS")
     # Google OAuth (optional) — leave blank to hide the "Sign in with Google"
     # button. Create credentials at https://console.cloud.google.com/apis/credentials
     google_client_id: str = ""
@@ -131,6 +136,17 @@ class Settings(BaseSettings):
     # Max résumé upload size (MB) and how many jobs to rank per user per run.
     max_resume_mb: int = 5
     max_ranks_per_user: int = 30
+
+    # ── Rate limiting (per client IP, in-memory) ──
+    # Disabled in tests; enabled by default in dev/prod. Tune the per-bucket
+    # windows below if a bucket is too tight/loose for your traffic.
+    rate_limit_enabled: bool = True
+    rl_auth_times: int = 10          # login/signup/google attempts ...
+    rl_auth_seconds: int = 60        # ... per minute per IP
+    rl_upload_times: int = 8         # résumé uploads ...
+    rl_upload_seconds: int = 300     # ... per 5 min per IP
+    rl_run_times: int = 12           # trigger/rerank kicks ...
+    rl_run_seconds: int = 300        # ... per 5 min per IP
     # Auto-cleanup: delete jobs older than this many days that nobody applied
     # to / tailored — keeps the shared pool fresh and small. 0 disables.
     job_retention_days: int = 30
@@ -263,6 +279,13 @@ class Settings(BaseSettings):
     @property
     def lever_companies(self) -> List[str]:
         return _csv(self.lever_companies_raw)
+
+    @property
+    def admin_emails(self) -> List[str]:
+        return [e.lower() for e in _csv(self.admin_emails_raw)]
+
+    def is_admin_email(self, email: str | None) -> bool:
+        return bool(email) and email.lower().strip() in self.admin_emails
 
     @property
     def workday_tenants(self) -> List[str]:

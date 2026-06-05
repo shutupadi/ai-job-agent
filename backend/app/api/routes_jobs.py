@@ -5,17 +5,26 @@ from __future__ import annotations
 import datetime as dt
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, or_
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.auth.deps import get_current_user
+from app.auth.rate_limit import RateLimiter
+from app.config import settings
 from app.db import models
 from app.db.session import get_db
-from app.schemas.schemas import JobListOut, JobOut, MarkAppliedRequest
+from app.schemas.schemas import JobListOut, JobOut, MarkAppliedRequest, RerankResponse
+from app.services.pipeline import run_pipeline
 from app.utils.logger import log
 
 router = APIRouter()
+
+# Rankings we never silently discard on a reset — they represent work the user
+# already invested (a tailored résumé / a recorded application).
+_PROTECTED_STATUSES = ("tailored", "applied")
+
+_run_rl = RateLimiter("run", times=settings.rl_run_times, seconds=settings.rl_run_seconds)
 
 
 def _job_out(job: models.Job, rk: Optional[models.Ranking]) -> JobOut:
@@ -53,10 +62,13 @@ def list_jobs(
     min_rank: Optional[int] = None,
     status: Optional[str] = None,
     remote_only: bool = False,
+    top_only: bool = Query(False, description="Only top-tier companies"),
+    posted_within_days: Optional[int] = Query(None, ge=1, le=365),
+    sort: str = Query("rank", pattern="^(rank|recent)$"),
     limit: int = Query(50, le=200),
     offset: int = 0,
 ):
-    """Jobs ranked for the current user, best first."""
+    """Jobs ranked for the current user, best first (or most recent)."""
     qry = db.query(models.Job, models.Ranking).join(
         models.Ranking,
         and_(models.Ranking.job_id == models.Job.id, models.Ranking.user_id == user.id),
@@ -78,18 +90,81 @@ def list_jobs(
         qry = qry.filter(models.Ranking.status == status)
     if remote_only:
         qry = qry.filter(models.Job.remote.is_(True))
+    if top_only:
+        from app.services.ranking import TOP_COMPANIES
+
+        qry = qry.filter(
+            or_(*[models.Job.company.ilike(f"%{c}%") for c in TOP_COMPANIES])
+        )
+    if posted_within_days:
+        cutoff = dt.datetime.utcnow() - dt.timedelta(days=posted_within_days)
+        qry = qry.filter(
+            func.coalesce(models.Job.posted_at, models.Job.discovered_at) >= cutoff
+        )
 
     total = qry.count()
-    rows = (
-        qry.order_by(
+    if sort == "recent":
+        order = (
+            func.coalesce(models.Job.posted_at, models.Job.discovered_at).desc(),
+            models.Ranking.rank_score.desc().nullslast(),
+        )
+    else:
+        order = (
             models.Ranking.rank_score.desc().nullslast(),
             models.Job.discovered_at.desc(),
         )
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
+    rows = qry.order_by(*order).offset(offset).limit(limit).all()
     return JobListOut(items=[_job_out(j, rk) for j, rk in rows], total=total)
+
+
+def _clear_rankings(db: Session, user_id: str, scope: str) -> int:
+    """Delete the user's rankings. scope='ranked' keeps tailored/applied work;
+    scope='all' clears those too (a full re-score from scratch). Returns count."""
+    q = db.query(models.Ranking).filter(models.Ranking.user_id == user_id)
+    if scope != "all":
+        q = q.filter(models.Ranking.status.notin_(_PROTECTED_STATUSES))
+    return q.delete(synchronize_session=False)
+
+
+@router.post("/reset-rankings", response_model=RerankResponse)
+def reset_rankings(
+    scope: str = Query("ranked", pattern="^(ranked|all)$"),
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Clear THIS user's rankings so the next run scores jobs fresh. Does not
+    re-run the pipeline. scope=ranked (default) preserves tailored/applied jobs."""
+    cleared = _clear_rankings(db, user.id, scope)
+    db.commit()
+    log.info(f"Reset rankings for {user.id[:8]}: cleared={cleared} scope={scope}")
+    return RerankResponse(status="reset", cleared=cleared)
+
+
+@router.post("/rerank", response_model=RerankResponse, dependencies=[Depends(_run_rl)])
+def rerank(
+    background_tasks: BackgroundTasks,
+    scope: str = Query("ranked", pattern="^(ranked|all)$"),
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Clear THIS user's existing rankings, then kick a fresh rank-only run in the
+    background (re-scores the current pool against your résumé + current mode)."""
+    if not _active_resume_exists(db, user.id):
+        raise HTTPException(400, "Upload your résumé first (Settings → résumé).")
+    cleared = _clear_rankings(db, user.id, scope)
+    db.commit()
+    log.info(f"Rerank requested by {user.id[:8]}: cleared={cleared} scope={scope}")
+    background_tasks.add_task(run_pipeline, "manual", user.id)
+    return RerankResponse(status="started", cleared=cleared)
+
+
+def _active_resume_exists(db: Session, user_id: str) -> bool:
+    return (
+        db.query(models.Resume.id)
+        .filter(models.Resume.user_id == user_id, models.Resume.is_active.is_(True))
+        .first()
+        is not None
+    )
 
 
 @router.get("/{job_id}", response_model=JobOut)

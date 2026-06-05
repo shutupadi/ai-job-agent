@@ -42,7 +42,7 @@ export default function Nav() {
         </Link>
         {user && (
           <div className="flex items-center gap-1 text-sm">
-            {LINKS.map(l => {
+            {(user.is_admin ? [...LINKS, { href: '/admin', label: 'Admin' }] : LINKS).map(l => {
               const active = l.href === '/' ? path === '/' : path.startsWith(l.href);
               return (
                 <Link

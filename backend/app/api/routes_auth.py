@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.auth.deps import get_current_user
+from app.auth.deps import get_current_user, is_admin
+from app.auth.rate_limit import RateLimiter
 from app.auth.security import create_access_token, hash_password, verify_password
 from app.config import settings
 from app.db import models
@@ -21,6 +25,9 @@ from app.schemas.schemas import (
 )
 
 router = APIRouter()
+
+# Throttle credential endpoints to blunt brute-force / signup spam.
+_auth_rl = RateLimiter("auth", times=settings.rl_auth_times, seconds=settings.rl_auth_seconds)
 
 
 def _has_resume(db: Session, user_id: str) -> bool:
@@ -38,7 +45,7 @@ def _user_out(db: Session, user: models.User) -> UserOut:
         email=user.email,
         name=user.name,
         avatar_url=user.avatar_url,
-        is_admin=user.is_admin,
+        is_admin=is_admin(user),
         has_resume=_has_resume(db, user.id),
         experience_pref=user.experience_pref or "fresher",
     )
@@ -48,7 +55,12 @@ def _token_response(db: Session, user: models.User) -> TokenResponse:
     return TokenResponse(access_token=create_access_token(user.id), user=_user_out(db, user))
 
 
-@router.post("/signup", response_model=TokenResponse, status_code=201)
+@router.post(
+    "/signup",
+    response_model=TokenResponse,
+    status_code=201,
+    dependencies=[Depends(_auth_rl)],
+)
 def signup(payload: SignupRequest, db: Session = Depends(get_db)):
     email = payload.email.lower().strip()
     if db.query(models.User).filter(models.User.email == email).first():
@@ -64,7 +76,7 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
     return _token_response(db, user)
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=TokenResponse, dependencies=[Depends(_auth_rl)])
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     email = payload.email.lower().strip()
     user = db.query(models.User).filter(models.User.email == email).first()
@@ -113,7 +125,38 @@ def update_me(
     return _user_out(db, user)
 
 
-@router.post("/google", response_model=TokenResponse)
+@router.delete("/me", status_code=204)
+def delete_me(
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Permanently delete the current user and ALL their data (résumés, rankings,
+    applications, tailored docs cascade via FK ondelete). Also removes uploaded
+    files from disk. This is irreversible."""
+    uid = user.id
+    # Best-effort: wipe the user's uploaded-file directory.
+    try:
+        updir = Path(settings.storage_dir) / "uploads" / uid
+        if updir.exists():
+            shutil.rmtree(updir, ignore_errors=True)
+    except Exception:
+        pass
+    # Explicitly remove dependent rows so deletion is correct on every backend
+    # (Postgres has ON DELETE CASCADE; SQLite does not enforce FKs by default).
+    for model in (
+        models.Application,
+        models.Ranking,
+        models.ResumeVersion,
+        models.CoverLetter,
+        models.Resume,
+    ):
+        db.query(model).filter(model.user_id == uid).delete(synchronize_session=False)
+    db.delete(user)
+    db.commit()
+    return None
+
+
+@router.post("/google", response_model=TokenResponse, dependencies=[Depends(_auth_rl)])
 def google(payload: GoogleAuthRequest, db: Session = Depends(get_db)):
     """Sign in with a Google ID token (verified via Google's tokeninfo)."""
     if not settings.google_client_id:

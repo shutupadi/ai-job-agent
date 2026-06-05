@@ -49,6 +49,16 @@ def experience_level(years: int) -> str:
     return "senior"
 
 
+def candidate_years(resume_json: dict) -> int:
+    """Total years of experience for a parsed résumé. Prefers the parser's
+    explicit `experience_years`; falls back to estimating from job dates."""
+    years = resume_json.get("experience_years")
+    if not isinstance(years, (int, float)) or years == 0:
+        est = _estimate_years(resume_json.get("experience"))
+        years = max(int(years or 0), est)
+    return int(years or 0)
+
+
 # Top product companies + investment banks / quant funds — these get a relevance
 # bonus so they float to the top of the shortlist (user-requested priority).
 TOP_COMPANIES = {
@@ -104,10 +114,7 @@ def candidate_profile(resume_json: dict, fresher: bool = False) -> str:
     else:
         flat_skills = list(skills)
 
-    years = resume_json.get("experience_years")
-    if not isinstance(years, (int, float)):
-        years = _estimate_years(resume_json.get("experience"))
-    years = int(years or 0)
+    years = candidate_years(resume_json)
     if fresher:
         years = 0
         level = "entry / new-grad (FRESHER MODE — only entry-level roles)"
@@ -120,12 +127,18 @@ def candidate_profile(resume_json: dict, fresher: bool = False) -> str:
         if isinstance(e, dict) and e.get("title")
     ][:3]
 
+    target_titles = resume_json.get("target_titles") or []
+    if not isinstance(target_titles, list):
+        target_titles = []
+
     return json.dumps(
         {
             "name": resume_json.get("name"),
             "summary": resume_json.get("summary"),
             "professional_experience_years": years,
             "experience_level": level,
+            "role_direction": resume_json.get("role_direction") or "",
+            "target_titles": [str(t) for t in target_titles][:6],
             "recent_titles": titles,
             "min_salary_lpa": settings.min_salary_lpa,
             "skills": flat_skills,
