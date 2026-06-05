@@ -130,6 +130,10 @@ class Job(Base):
     ats_keywords: Mapped[Optional[list]] = mapped_column(JSON)
 
     status: Mapped[str] = mapped_column(String(32), default="new")  # discovery status
+    # Liveness of the posting: open | closed | unknown. The closed-job checker
+    # flips this to 'closed' when the URL 404s; closed jobs are hidden by default.
+    open_status: Mapped[str] = mapped_column(String(10), default="open")
+    last_checked_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime)
     auto_apply: Mapped[bool] = mapped_column(Boolean, default=True)
     # direct | external | discovery (how the user applies; see RawJob.apply_type)
     apply_type: Mapped[str] = mapped_column(String(16), default="external")

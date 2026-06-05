@@ -24,8 +24,8 @@ export const useAuth = () => useContext(Ctx);
 
 // '/' is public so guests can upload a résumé before signing up; page.tsx shows
 // the guest landing when logged out and the dashboard when logged in.
-const PUBLIC = ['/', '/login', '/signup', '/verify'];
-const AUTH_PAGES = ['/login', '/signup', '/verify'];
+const PUBLIC = ['/', '/login', '/signup', '/verify', '/forgot-password', '/reset-password'];
+const AUTH_PAGES = ['/login', '/signup', '/verify', '/forgot-password', '/reset-password'];
 
 export default function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);

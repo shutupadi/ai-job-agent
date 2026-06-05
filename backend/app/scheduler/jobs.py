@@ -143,5 +143,14 @@ def daily_digest():
     typer.echo(f"Daily digest sent to {n} user(s)")
 
 
+@cli.command("check-closed")
+def check_closed():
+    """Probe recent/saved postings and mark dead ones (404/410) as closed."""
+    from app.services import job_checker
+
+    res = job_checker.run_check()
+    typer.echo(f"Closed-job check: {res}")
+
+
 if __name__ == "__main__":
     cli()

@@ -20,14 +20,16 @@ from app.db import models
 from app.db.session import get_db
 from app.schemas.schemas import (
     AdminResumeOut,
+    AdminSourceOut,
     AdminStats,
     AdminUserOut,
     CompanyTierOut,
     CompanyTierUpsert,
     RunOut,
     SourceHealthOut,
+    SystemHealthOut,
 )
-from app.services import alerts, company_quality, source_health
+from app.services import alerts, company_quality, otp, source_health, sources_meta
 
 router = APIRouter()
 
@@ -164,6 +166,53 @@ def source_health_report(
     db: Session = Depends(get_db), _: models.User = Depends(get_current_admin)
 ):
     return [SourceHealthOut.model_validate(r) for r in source_health.all_health(db)]
+
+
+@router.get("/sources", response_model=List[AdminSourceOut])
+def sources_report(
+    db: Session = Depends(get_db), _: models.User = Depends(get_current_admin)
+):
+    """Rich per-source view: enabled, real-vs-stub, missing credentials, confidence,
+    and the latest run health — everything an operator needs at a glance."""
+    health = {h.source: h for h in source_health.all_health(db)}
+    out: List[AdminSourceOut] = []
+    for name, meta in sources_meta.META.items():
+        h = health.get(name)
+        missing = sources_meta.missing_credentials(name)
+        out.append(
+            AdminSourceOut(
+                name=name,
+                enabled=bool(getattr(settings, f"enable_{name}", False)),
+                stub=bool(meta.get("stub")),
+                kind=meta.get("kind", "unknown"),
+                confidence=meta.get("confidence", "unknown"),
+                configured=len(missing) == 0,
+                missing_credentials=missing,
+                last_run_at=h.last_run_at if h else None,
+                last_success_at=h.last_success_at if h else None,
+                jobs_found=h.jobs_found if h else 0,
+                jobs_added=h.jobs_added if h else 0,
+                failures=h.failures if h else 0,
+                last_error=h.last_error if h else None,
+            )
+        )
+    # enabled first, then by name
+    out.sort(key=lambda s: (not s.enabled, s.name))
+    return out
+
+
+@router.get("/system-health", response_model=SystemHealthOut)
+def system_health(_: models.User = Depends(get_current_admin)):
+    """Email/verification configuration status — flags the prod misconfig where
+    verification is required but no provider can deliver codes."""
+    return SystemHealthOut(
+        app_env=settings.app_env,
+        email_provider=settings.email_provider or "",
+        email_enabled=alerts.email_enabled(),
+        verification_required=settings.require_email_verification,
+        verification_active=otp.verification_active(),
+        email_misconfigured=otp.email_misconfigured(),
+    )
 
 
 @router.get("/email-test")

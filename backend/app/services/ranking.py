@@ -207,6 +207,7 @@ def rank_job_for_user(
             posted_at=job.posted_at,
             discovered_at=job.discovered_at,
             ats_keywords=ats_keywords,
+            source=job.source,
             llm_overall=int(payload.get("overall", 0)),
             llm_breakdown=payload.get("breakdown") or {},
         )

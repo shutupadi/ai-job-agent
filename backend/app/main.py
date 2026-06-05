@@ -38,6 +38,18 @@ async def lifespan(app: FastAPI):  # noqa: D401
                 "JWT_SECRET is missing/weak in production. Set a strong random "
                 "JWT_SECRET (>=32 chars) — see .env.example."
             )
+        # Email verification is required but no provider is configured: new
+        # signups can't receive codes. Warn loudly (surfaced in admin health too)
+        # — we no longer silently auto-verify in production.
+        from app.services.otp import email_misconfigured
+
+        if email_misconfigured():
+            log.error(
+                "EMAIL MISCONFIGURED: REQUIRE_EMAIL_VERIFICATION is on but no email "
+                "provider is set (EMAIL_PROVIDER + key + EMAIL_FROM). New signups "
+                "cannot verify. Configure an email provider or set "
+                "REQUIRE_EMAIL_VERIFICATION=false. See /api/admin/system-health."
+            )
     yield
     log.info("AI Job Agent shutting down")
 

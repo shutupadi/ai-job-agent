@@ -165,6 +165,17 @@ class Settings(BaseSettings):
     # to / tailored — keeps the shared pool fresh and small. 0 disables.
     job_retention_days: int = 30
 
+    # ── Watchlist scan ──
+    # When True, the fast watchlist scan fetches FRESH jobs but ingests only those
+    # at users' prioritised companies (bounded — safe for Render free).
+    watchlist_fetch_enabled: bool = True
+
+    # ── Closed-job detection ──
+    # Periodically HEAD/GET top/recent/saved postings; 404/410 → mark closed.
+    # Closed jobs are hidden by default. Bounded per run to stay light.
+    job_check_enabled: bool = True
+    job_check_max: int = 40
+
     # ── Source toggles ──
     enable_greenhouse: bool = True
     enable_lever: bool = True

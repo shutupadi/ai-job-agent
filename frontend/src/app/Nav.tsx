@@ -32,7 +32,13 @@ export default function Nav() {
   }
 
   // No nav chrome on the auth pages.
-  if (path.startsWith('/login') || path.startsWith('/signup') || path.startsWith('/verify'))
+  if (
+    path.startsWith('/login') ||
+    path.startsWith('/signup') ||
+    path.startsWith('/verify') ||
+    path.startsWith('/forgot-password') ||
+    path.startsWith('/reset-password')
+  )
     return null;
 
   return (

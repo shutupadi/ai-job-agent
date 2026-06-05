@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, AdminStats, AdminUser, Run, SourceHealth } from '@/lib/api';
+import { api, AdminSource, AdminStats, AdminUser, Run, SystemHealth } from '@/lib/api';
 import { useAuth } from '../AuthProvider';
 
 export default function AdminPage() {
@@ -9,7 +9,8 @@ export default function AdminPage() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
-  const [health, setHealth] = useState<SourceHealth[]>([]);
+  const [sources, setSources] = useState<AdminSource[]>([]);
+  const [sys, setSys] = useState<SystemHealth | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
 
@@ -17,13 +18,15 @@ export default function AdminPage() {
     if (user && !user.is_admin) return;
     (async () => {
       try {
-        const [s, u, r, h] = await Promise.all([
-          api.adminStats(), api.adminUsers(), api.adminRuns(), api.adminSourceHealth(),
+        const [s, u, r, src, sh] = await Promise.all([
+          api.adminStats(), api.adminUsers(), api.adminRuns(),
+          api.adminSources(), api.adminSystemHealth(),
         ]);
         setStats(s);
         setUsers(u);
         setRuns(r);
-        setHealth(h);
+        setSources(src);
+        setSys(sh);
       } catch (e: any) {
         setErr(e.message);
       }
@@ -123,38 +126,81 @@ export default function AdminPage() {
         </div>
       </section>
 
+      {sys && (
+        <section className="card space-y-2">
+          <h2 className="font-semibold">System health</h2>
+          <div className="flex flex-wrap gap-2 text-sm">
+            <span className="pill-mute">env: {sys.app_env}</span>
+            <span className="pill-mute">email: {sys.email_provider || 'none'}</span>
+            <span className={sys.email_enabled ? 'pill-good' : 'pill-warn'}>
+              email {sys.email_enabled ? 'configured' : 'not configured'}
+            </span>
+            <span className={sys.verification_active ? 'pill-good' : 'pill-warn'}>
+              OTP {sys.verification_active ? 'enforced' : 'off'}
+            </span>
+          </div>
+          {sys.email_misconfigured && (
+            <p className="text-bad text-sm">
+              ⚠ Verification is required in production but no email provider is configured —
+              new signups can't verify. Set EMAIL_PROVIDER + key + EMAIL_FROM (or disable
+              REQUIRE_EMAIL_VERIFICATION).
+            </p>
+          )}
+        </section>
+      )}
+
       <section>
-        <h2 className="font-semibold mb-3">Source health</h2>
+        <h2 className="font-semibold mb-3">Sources</h2>
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-muted">
                 <th className="py-1 pr-4">Source</th>
+                <th className="py-1 pr-4">Status</th>
+                <th className="py-1 pr-4">Confidence</th>
                 <th className="py-1 pr-4">Last run</th>
                 <th className="py-1 pr-4">Found</th>
                 <th className="py-1 pr-4">Added</th>
-                <th className="py-1 pr-4">Failures</th>
-                <th className="py-1">Last error</th>
+                <th className="py-1 pr-4">Fails</th>
+                <th className="py-1">Notes</th>
               </tr>
             </thead>
             <tbody>
-              {health.map(h => (
-                <tr key={h.source} className="border-t border-gray-100 dark:border-gray-700">
-                  <td className="py-1 pr-4 font-medium">{h.source}</td>
-                  <td className="py-1 pr-4 text-muted">
-                    {h.last_run_at ? new Date(h.last_run_at).toLocaleString() : '—'}
+              {sources.map(s => (
+                <tr key={s.name} className="border-t border-gray-100 dark:border-gray-700">
+                  <td className="py-1 pr-4 font-medium">{s.name}</td>
+                  <td className="py-1 pr-4">
+                    <span className={s.enabled ? 'pill-good' : 'pill-mute'}>
+                      {s.enabled ? 'on' : 'off'}
+                    </span>
+                    {s.stub && <span className="pill-warn ml-1">stub</span>}
                   </td>
-                  <td className="py-1 pr-4">{h.jobs_found}</td>
-                  <td className="py-1 pr-4">{h.jobs_added}</td>
-                  <td className={`py-1 pr-4 ${h.failures ? 'text-bad' : ''}`}>{h.failures}</td>
-                  <td className="py-1 text-bad truncate max-w-xs" title={h.last_error || ''}>
-                    {h.last_error || ''}
+                  <td className="py-1 pr-4">
+                    <span className={
+                      s.confidence === 'high' ? 'pill-good'
+                      : s.confidence === 'medium' ? 'pill-info' : 'pill-warn'
+                    }>{s.confidence}</span>
+                  </td>
+                  <td className="py-1 pr-4 text-muted">
+                    {s.last_run_at ? new Date(s.last_run_at).toLocaleString() : '—'}
+                  </td>
+                  <td className="py-1 pr-4">{s.jobs_found}</td>
+                  <td className="py-1 pr-4">{s.jobs_added}</td>
+                  <td className={`py-1 pr-4 ${s.failures ? 'text-bad' : ''}`}>{s.failures}</td>
+                  <td className="py-1 max-w-xs">
+                    {s.enabled && !s.configured && (
+                      <span className="text-warn" title="Missing credentials">
+                        missing: {s.missing_credentials.join(', ')}
+                      </span>
+                    )}
+                    {s.last_error && (
+                      <span className="text-bad truncate block" title={s.last_error}>
+                        {s.last_error}
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}
-              {health.length === 0 && (
-                <tr><td colSpan={6} className="py-2 text-muted">No source runs recorded yet.</td></tr>
-              )}
             </tbody>
           </table>
         </div>

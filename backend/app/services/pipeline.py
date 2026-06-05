@@ -29,6 +29,7 @@ from app.services import (
     experience_filter,
     geo_filter,
     guest,
+    job_checker,
     ranking,
     relevance,
     resume_engine,
@@ -232,10 +233,24 @@ def _target_users(user_id: Optional[str]) -> List[Tuple[str, dict, bool]]:
         return targets
 
 
-def _do_fetch(run_id: str, log_buf: List[str]) -> None:
+def _do_fetch(run_id: str, log_buf: List[str], company_filter: Optional[set] = None) -> None:
+    """Fetch sources → geo gate → ingest into the SHARED pool.
+
+    NOTE: we deliberately DO NOT apply any experience/seniority filter here. The
+    shared pool stores ALL valid jobs (every level); fresher/senior fit is decided
+    PER USER at ranking time (pipeline.passes_prefilter). This lets an experienced
+    user see senior roles while a fresher never does.
+
+    company_filter (watchlist scan): when set, only ingest postings whose company
+    matches one of these normalized names — keeps the watchlist scan bounded.
+    """
     raws, stats = _fetch_all()
     kept, geo_dropped = geo_filter.filter_rawjobs(raws)
-    kept, exp_dropped = experience_filter.filter_rawjobs(kept)
+    wl_dropped = 0
+    if company_filter:
+        before = len(kept)
+        kept = [r for r in kept if company_quality.normalize(r.company) in company_filter]
+        wl_dropped = before - len(kept)
     with session_scope() as db:
         run = db.get(models.Run, run_id)
         run.jobs_found = len(raws)
@@ -247,12 +262,23 @@ def _do_fetch(run_id: str, log_buf: List[str]) -> None:
                 stats[j.source]["added"] += 1
         log_buf.append(
             f"fetched={len(raws)} kept={len(kept)} geo_dropped={geo_dropped} "
-            f"exp_dropped={exp_dropped} new={len(new_jobs)}"
+            f"watchlist_dropped={wl_dropped} new={len(new_jobs)}"
         )
     try:
         source_health.record(stats)
     except Exception as e:
         log.warning(f"Source-health recording failed: {e}")
+
+
+def _prioritized_watchlist_norms(user_id: Optional[str]) -> set:
+    """Union of prioritized watchlist company-norms across target users."""
+    with session_scope() as db:
+        q = db.query(models.WatchlistCompany.company_norm).filter(
+            models.WatchlistCompany.priority == "prioritize"
+        )
+        if user_id:
+            q = q.filter(models.WatchlistCompany.user_id == user_id)
+        return {r[0] for r in q.distinct().all()}
 
 
 def run_pipeline(
@@ -290,21 +316,38 @@ def _run_pipeline(trigger: str, user_id: Optional[str], scan_mode: str = "broad"
 
     log_buf: List[str] = []
 
-    # ── 1. fetch (scheduler always; user trigger only if pool stale) ──
-    # Watchlist scans never fetch — they re-rank the existing pool cheaply.
+    # ── 1. fetch ──
+    # • broad scan: full fetch (scheduler always; user trigger only if pool stale).
+    # • watchlist scan: fetch fresh jobs but ingest ONLY prioritised-company
+    #   postings (bounded) so alerts catch brand-new watchlist roles fast.
     fetched = False
-    want_fetch = (not watchlist_only) and ((user_id is None) or (not _pool_is_fresh()))
-    if want_fetch:
-        if _FETCH_LOCK.acquire(blocking=False):
+    if watchlist_only:
+        watch_norms = (
+            _prioritized_watchlist_norms(user_id) if settings.watchlist_fetch_enabled else set()
+        )
+        if watch_norms and _FETCH_LOCK.acquire(blocking=False):
             try:
-                _do_fetch(run_id, log_buf)
+                _do_fetch(run_id, log_buf, company_filter=watch_norms)
                 fetched = True
             finally:
                 _FETCH_LOCK.release()
         else:
-            log_buf.append("fetch skipped (another fetch in progress)")
+            log_buf.append(
+                "watchlist fetch skipped (no watchlist companies / fetch busy / disabled)"
+            )
     else:
-        log_buf.append("fetch skipped (pool fresh)")
+        want_fetch = (user_id is None) or (not _pool_is_fresh())
+        if want_fetch:
+            if _FETCH_LOCK.acquire(blocking=False):
+                try:
+                    _do_fetch(run_id, log_buf)
+                    fetched = True
+                finally:
+                    _FETCH_LOCK.release()
+            else:
+                log_buf.append("fetch skipped (another fetch in progress)")
+        else:
+            log_buf.append("fetch skipped (pool fresh)")
 
     # ── 2. per-user ranking ──
     targets = _target_users(user_id)
@@ -327,16 +370,21 @@ def _run_pipeline(trigger: str, user_id: Optional[str], scan_mode: str = "broad"
         except Exception as e:
             log.warning(f"Alert check failed for {uid[:8]}: {e}")
 
-    # ── 2b. cleanup (only when we fetched, i.e. scheduler / stale refresh) ──
-    pruned = prune_old_jobs(settings.job_retention_days) if fetched else 0
+    # ── 2b. cleanup (only on a BROAD fetch — keep watchlist scans cheap) ──
+    pruned = prune_old_jobs(settings.job_retention_days) if (fetched and not watchlist_only) else 0
     if pruned:
         log.info(f"Pruned {pruned} old jobs (>{settings.job_retention_days}d, unused)")
-    if fetched:
+    if fetched and not watchlist_only:
         try:
             with session_scope() as db:
                 guest.cleanup_expired(db)
         except Exception as e:
             log.warning(f"Guest cleanup failed: {e}")
+        # Closed-job detection (bounded) — flips dead postings to 'closed'.
+        try:
+            job_checker.run_check()
+        except Exception as e:
+            log.warning(f"Closed-job check failed: {e}")
 
     # ── 3. finalise ──
     with session_scope() as db:

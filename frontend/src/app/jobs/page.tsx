@@ -332,8 +332,16 @@ export default function JobsPage() {
                       {j.watchlisted && <span className="pill-good" title="On your watchlist">⭐ Watchlist</span>}
                       <TierPill tier={j.company_tier} />
                       <span className="pill-mute">{j.source}</span>
+                      {j.source_confidence === 'low' && (
+                        <span className="pill-warn" title="Lower-confidence source — verify the posting before applying">
+                          low-confidence
+                        </span>
+                      )}
                       {j.apply_type === 'discovery' && (
                         <span className="pill-warn" title="Link-out only; apply on the source site">discovery</span>
+                      )}
+                      {j.open_status === 'closed' && (
+                        <span className="pill-bad" title="This posting appears to be closed/removed">closed</span>
                       )}
                       {j.remote && <span className="pill-info">remote</span>}
                       {j.saved && <span className="pill-info">🔖 saved</span>}

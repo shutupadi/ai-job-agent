@@ -37,13 +37,25 @@ def _now() -> dt.datetime:
 
 
 def verification_active() -> bool:
-    """Whether email verification is currently ENFORCED."""
-    if not settings.require_email_verification:
-        return False
-    if alerts.email_enabled():
-        return True
-    # No provider: enforce only in dev (codes are logged); degrade in prod.
-    return settings.app_env.lower() != "prod"
+    """Whether email verification is currently ENFORCED.
+
+    If REQUIRE_EMAIL_VERIFICATION is on, verification is ALWAYS enforced — we never
+    silently auto-verify (that would fake security). When no email provider is
+    configured: in dev the code is logged so you can still test; in prod this is a
+    MISCONFIGURATION that we surface loudly (startup log + admin health) rather
+    than weakening signups. Existing users are grandfathered, so nobody is locked
+    out unexpectedly — only brand-new signups are gated."""
+    return bool(settings.require_email_verification)
+
+
+def email_misconfigured() -> bool:
+    """True when verification is required in prod but no email provider can send
+    the codes — a state that must be fixed (surfaced in admin health)."""
+    return (
+        settings.require_email_verification
+        and settings.app_env.lower() == "prod"
+        and not alerts.email_enabled()
+    )
 
 
 def _expose_dev_otp() -> bool:

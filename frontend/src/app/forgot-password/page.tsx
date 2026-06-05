@@ -4,34 +4,30 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { api } from '@/lib/api';
-import { useAuth } from '../AuthProvider';
-import GoogleButton from '../GoogleButton';
 
-export default function LoginPage() {
-  const { setSession } = useAuth();
+export default function ForgotPasswordPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
-  const [pw, setPw] = useState('');
-  const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr('');
+    setMsg('');
     setBusy(true);
     try {
-      const r = await api.login(email.trim(), pw);
-      setSession(r.access_token, r.user);
-      router.replace('/');
+      const r = await api.forgotPassword(email.trim());
+      try { localStorage.setItem('aijob_pending_email', email.trim()); } catch {}
+      setMsg(
+        r.dev_otp
+          ? `Dev mode - your reset code is ${r.dev_otp}`
+          : 'If an account exists for that email, a reset code is on its way.',
+      );
+      setTimeout(() => router.push('/reset-password'), 900);
     } catch (e: any) {
-      const m = e.message || 'Login failed';
-      // Backend returns a 403 with a "verify" message for unverified accounts.
-      if (/verif/i.test(m)) {
-        try { localStorage.setItem('aijob_pending_email', email.trim()); } catch {}
-        router.push('/verify');
-        return;
-      }
-      setErr(m);
+      setErr(e.message || 'Request failed');
     } finally {
       setBusy(false);
     }
@@ -45,8 +41,8 @@ export default function LoginPage() {
             <span className="inline-block w-7 h-7 rounded-md bg-accent text-white leading-7 text-center">A</span>
             AI Job Agent
           </div>
-          <h1 className="text-xl font-bold mt-3">Welcome back</h1>
-          <p className="text-muted text-sm">Log in to your account</p>
+          <h1 className="text-xl font-bold mt-3">Reset your password</h1>
+          <p className="text-muted text-sm">Enter your email and we'll send a reset code.</p>
         </div>
         <form onSubmit={submit} className="space-y-3">
           <input
@@ -54,23 +50,14 @@ export default function LoginPage() {
             type="email" placeholder="Email" value={email}
             onChange={e => setEmail(e.target.value)} required
           />
-          <input
-            className="w-full border rounded-md px-3 py-2 text-sm"
-            type="password" placeholder="Password" value={pw}
-            onChange={e => setPw(e.target.value)} required
-          />
           {err && <p className="text-bad text-sm">{err}</p>}
+          {msg && <p className="text-good text-sm">{msg}</p>}
           <button className="btn w-full justify-center" disabled={busy}>
-            {busy ? 'Logging in…' : 'Log in'}
+            {busy ? 'Sending...' : 'Send reset code'}
           </button>
         </form>
-        <GoogleButton onSession={setSession} />
         <p className="text-sm text-center text-muted">
-          No account?{' '}
-          <Link href="/signup" className="text-accent hover:underline">Sign up</Link>
-        </p>
-        <p className="text-sm text-center text-muted">
-          <Link href="/forgot-password" className="text-accent hover:underline">Forgot password?</Link>
+          <Link href="/login" className="text-accent hover:underline">Back to log in</Link>
         </p>
       </div>
     </div>

@@ -52,6 +52,8 @@ class JobOut(_ORM):
     match_label: Optional[str] = None
     match_signals: Optional[dict] = None
     apply_type: str = "external"
+    source_confidence: str = "unknown"  # high | medium | low | unknown
+    open_status: str = "open"           # open | closed | unknown
     company_tier: Optional[int] = None
     watchlisted: bool = False
     saved: bool = False
@@ -172,6 +174,32 @@ class SourceHealthOut(_ORM):
     total_runs: int = 0
     failures: int = 0
     last_error: Optional[str] = None
+
+
+# ── Admin: rich source dashboard ──
+class AdminSourceOut(BaseModel):
+    name: str
+    enabled: bool
+    stub: bool = False
+    kind: str = "unknown"          # ats | aggregator | discovery
+    confidence: str = "unknown"    # high | medium | low
+    configured: bool = True        # all required creds present
+    missing_credentials: List[str] = []
+    last_run_at: Optional[dt.datetime] = None
+    last_success_at: Optional[dt.datetime] = None
+    jobs_found: int = 0
+    jobs_added: int = 0
+    failures: int = 0
+    last_error: Optional[str] = None
+
+
+class SystemHealthOut(BaseModel):
+    app_env: str
+    email_provider: str = ""
+    email_enabled: bool = False
+    verification_required: bool = False
+    verification_active: bool = False
+    email_misconfigured: bool = False
 
 
 # ── Company tier overrides (admin) ──
@@ -368,6 +396,16 @@ class VerifyEmailRequest(BaseModel):
 
 class ResendOtpRequest(BaseModel):
     email: EmailStr
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=4, max_length=10)
+    new_password: str = Field(min_length=8, max_length=200)
 
 
 class AuthStartResponse(BaseModel):

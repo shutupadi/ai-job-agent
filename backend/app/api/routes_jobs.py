@@ -21,7 +21,7 @@ from app.schemas.schemas import (
     MarkAppliedRequest,
     RerankResponse,
 )
-from app.services import company_quality, user_context
+from app.services import company_quality, sources_meta, user_context
 from app.services.pipeline import run_pipeline
 from app.utils.logger import log
 
@@ -65,6 +65,8 @@ def _job_out(
         match_label=rk.match_label if rk else None,
         match_signals=sig,
         apply_type=job.apply_type or "external",
+        source_confidence=sources_meta.confidence_label(job.source),
+        open_status=job.open_status or "open",
         company_tier=tier,
         watchlisted=watchlisted or bool(sig.get("watchlisted")),
         saved=bool(rk.saved) if rk else False,
@@ -98,6 +100,7 @@ def list_jobs(
     watchlist_only: bool = False,
     saved_only: bool = False,
     include_hidden: bool = False,
+    include_closed: bool = False,
     match_level: Optional[str] = Query(
         None, pattern="^(excellent|good|maybe|not_recommended)$"
     ),
@@ -113,6 +116,8 @@ def list_jobs(
     )
     if not include_hidden:
         qry = qry.filter(models.Ranking.hidden.is_(False))
+    if not include_closed:
+        qry = qry.filter(models.Job.open_status != "closed")
     if q:
         like = f"%{q.lower()}%"
         qry = qry.filter(

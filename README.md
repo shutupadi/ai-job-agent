@@ -115,11 +115,33 @@ A try-before-you-signup flow plus OTP-verified accounts:
 - **Verified-only features** — `get_verified_user` gates run pipeline, rerank,
   save/feedback, tailor, mark-applied, set alerts, and watchlist edits. Reading
   (dashboard, jobs, profile) stays open to logged-in users.
-- **Graceful degradation** — verification is only *enforced* when it can be
-  delivered: with an email provider configured (any env) it sends real codes; in
-  dev without a provider the code is logged to the console (and returned as
-  `dev_otp`); in **prod without a provider** signups auto-verify so the live site
-  never bricks. Existing users and Google sign-ins are treated as verified.
+- **Graceful degradation (dev)** — in dev without a provider the code is logged to
+  the console (and returned as `dev_otp`) so you can still test. Existing users and
+  Google sign-ins are treated as verified. **Forgot password**: `/forgot-password`
+  + `/reset-password` use the same hashed-OTP email system.
+
+## Production reliability (v4)
+
+- **Shared pool stores all levels** — experience/seniority filtering is no longer
+  applied at ingestion; the pool keeps every valid job and fresher/senior fit is
+  decided **per user** at ranking time (a fresher never sees senior roles; an
+  experienced user does).
+- **Watchlist scan fetches fresh jobs** — `WATCHLIST_FETCH_ENABLED` makes the fast
+  scan pull new postings but **ingest only prioritised-company** jobs (bounded),
+  rank the relevant new ones, and fire excellent-match alerts.
+- **Source confidence** — direct ATS/company portals (Greenhouse, Lever, Ashby,
+  SmartRecruiters, Workday, Oracle, YC) = *high*; Adzuna = *medium*; LinkedIn /
+  Naukri public discovery = *low*. It's a small ranking nudge (never overrides role
+  fit) and is shown on job cards + the API (`source_confidence`).
+- **Closed-job detection** — `JOB_CHECK_ENABLED` probes recent/saved postings
+  (bounded by `JOB_CHECK_MAX`); 404/410 → `open_status=closed`. Closed jobs are
+  hidden by default (`?include_closed=true` to show) and badged when opened.
+- **Email-verification safety** — verification is never silently faked. In prod
+  without a provider it's flagged loudly (startup log + `/api/admin/system-health`)
+  instead of auto-verifying. Existing users are grandfathered (not locked out).
+- **Admin source dashboard** — `/admin` shows each source's enabled state,
+  real-vs-stub, missing credentials, confidence, last run, found/added, failures,
+  and last error, plus a system-health card (email/verification status).
 
 ## Quick start (Docker)
 

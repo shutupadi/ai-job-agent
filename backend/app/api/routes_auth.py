@@ -17,10 +17,12 @@ from app.db import models
 from app.db.session import get_db
 from app.schemas.schemas import (
     AuthStartResponse,
+    ForgotPasswordRequest,
     GoogleAuthRequest,
     LoginRequest,
     PreferencesUpdate,
     ResendOtpRequest,
+    ResetPasswordRequest,
     SignupRequest,
     SignupStartRequest,
     TokenResponse,
@@ -175,6 +177,44 @@ def resend_otp(payload: ResendOtpRequest, db: Session = Depends(get_db)):
     db.commit()
     generic.dev_otp = code if otp._expose_dev_otp() else None
     return generic
+
+
+@router.post("/forgot-password", response_model=AuthStartResponse, dependencies=[Depends(_otp_rl)])
+def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """Email a password-reset code. Always returns a generic response (no account
+    enumeration); throttled per user."""
+    email = payload.email.lower().strip()
+    user = db.query(models.User).filter(models.User.email == email).first()
+    out = AuthStartResponse(status="otp_sent", email=email, verification_required=True)
+    # Only send to real accounts that actually have a password to reset.
+    if not user or not user.password_hash:
+        return out
+    if otp.seconds_until_resend(db, user.id, "password_reset") > 0:
+        return out  # silently respect cooldown (still generic)
+    code = otp.create_and_send(db, user, "password_reset")
+    db.commit()
+    out.dev_otp = code if otp._expose_dev_otp() else None
+    return out
+
+
+@router.post("/reset-password", response_model=TokenResponse, dependencies=[Depends(_otp_rl)])
+def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """Verify the reset code and set a new password (then log in)."""
+    email = payload.email.lower().strip()
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if not user:
+        raise HTTPException(400, "Invalid or expired code.")  # generic
+    ok, msg = otp.verify(db, user, payload.code, "password_reset")
+    if not ok:
+        db.commit()
+        raise HTTPException(400, msg)
+    user.password_hash = hash_password(payload.new_password)
+    # Completing a reset proves control of the inbox → treat as verified.
+    if not user.email_verified:
+        otp.mark_verified(user)
+    db.commit()
+    db.refresh(user)
+    return _token_response(db, user)
 
 
 @router.post("/login", response_model=TokenResponse, dependencies=[Depends(_auth_rl)])

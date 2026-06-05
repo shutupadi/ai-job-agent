@@ -33,7 +33,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional
 
-from app.services import company_quality, experience_filter, relevance
+from app.services import company_quality, experience_filter, relevance, sources_meta
 
 WEIGHTS = {
     "role": 0.30,
@@ -210,6 +210,7 @@ def score_job(
     posted_at: Optional[dt.datetime] = None,
     discovered_at: Optional[dt.datetime] = None,
     ats_keywords: Optional[list[str]] = None,
+    source: str = "",
     llm_overall: Optional[int] = None,
     llm_breakdown: Optional[dict] = None,
 ) -> dict:
@@ -287,6 +288,14 @@ def score_job(
     if watchlisted and final >= 45:
         reasons.append("On your company watchlist")
 
+    # ── source confidence (small nudge; never overrides role fit) ──
+    source_conf = sources_meta.confidence_score(source)
+    source_label = sources_meta.confidence_label(source)
+    if not exclude:
+        final = _clamp(final + (source_conf - 50) * 0.08)
+        if source_label == "low":
+            reasons.append("Lower-confidence source — verify the posting")
+
     label = "not_recommended" if exclude else label_for(final)
 
     signals = {
@@ -296,6 +305,7 @@ def score_job(
         "company": company_c,
         "recency": recency,
         "salary_location": sal_loc,
+        "source_confidence": source_label,
         "matched_skills": matched,
         "missing_skills": missing,
         "company_tier": tier,

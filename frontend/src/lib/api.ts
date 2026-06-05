@@ -149,6 +149,8 @@ export type Job = {
   match_label?: string | null;
   match_signals?: MatchSignals | null;
   apply_type?: string;
+  source_confidence?: string; // high | medium | low | unknown
+  open_status?: string;       // open | closed | unknown
   company_tier?: number | null;
   watchlisted?: boolean;
   saved?: boolean;
@@ -215,6 +217,31 @@ export type SourceHealth = {
   total_runs: number;
   failures: number;
   last_error?: string | null;
+};
+
+export type AdminSource = {
+  name: string;
+  enabled: boolean;
+  stub: boolean;
+  kind: string;
+  confidence: string;
+  configured: boolean;
+  missing_credentials: string[];
+  last_run_at?: string | null;
+  last_success_at?: string | null;
+  jobs_found: number;
+  jobs_added: number;
+  failures: number;
+  last_error?: string | null;
+};
+
+export type SystemHealth = {
+  app_env: string;
+  email_provider: string;
+  email_enabled: boolean;
+  verification_required: boolean;
+  verification_active: boolean;
+  email_misconfigured: boolean;
 };
 
 export type Application = {
@@ -366,6 +393,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email }),
     }),
+  forgotPassword: (email: string) =>
+    http<AuthStartResponse>('/api/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+  resetPassword: (email: string, code: string, new_password: string) =>
+    http<TokenResponse>('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ email, code, new_password }),
+    }),
   login: (email: string, password: string) =>
     http<TokenResponse>('/api/auth/login', {
       method: 'POST',
@@ -487,6 +524,8 @@ export const api = {
   adminUsers: () => http<AdminUser[]>('/api/admin/users'),
   adminRuns: () => http<Run[]>('/api/admin/runs'),
   adminSourceHealth: () => http<SourceHealth[]>('/api/admin/source-health'),
+  adminSources: () => http<AdminSource[]>('/api/admin/sources'),
+  adminSystemHealth: () => http<SystemHealth>('/api/admin/system-health'),
   adminEmailTest: (to?: string) =>
     http<{
       provider: string;
