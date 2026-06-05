@@ -9,7 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
-from app.auth.deps import get_current_user
+from app.auth.deps import get_current_user, get_verified_user
 from app.auth.rate_limit import RateLimiter
 from app.config import settings
 from app.db import models
@@ -203,7 +203,7 @@ def _clear_rankings(db: Session, user_id: str, scope: str) -> int:
 def reset_rankings(
     scope: str = Query("ranked", pattern="^(ranked|all)$"),
     db: Session = Depends(get_db),
-    user: models.User = Depends(get_current_user),
+    user: models.User = Depends(get_verified_user),
 ):
     """Clear THIS user's rankings so the next run scores jobs fresh. Does not
     re-run the pipeline. scope=ranked (default) preserves tailored/applied jobs."""
@@ -218,7 +218,7 @@ def rerank(
     background_tasks: BackgroundTasks,
     scope: str = Query("ranked", pattern="^(ranked|all)$"),
     db: Session = Depends(get_db),
-    user: models.User = Depends(get_current_user),
+    user: models.User = Depends(get_verified_user),
 ):
     """Clear THIS user's existing rankings, then kick a fresh rank-only run in the
     background (re-scores the current pool against your résumé + current mode)."""
@@ -258,7 +258,7 @@ def mark_applied(
     job_id: str,
     payload: Optional[MarkAppliedRequest] = None,
     db: Session = Depends(get_db),
-    user: models.User = Depends(get_current_user),
+    user: models.User = Depends(get_verified_user),
 ):
     """Record that the current user applied to this job (by hand)."""
     job = db.get(models.Job, job_id)
@@ -300,7 +300,7 @@ def feedback(
     job_id: str,
     payload: FeedbackRequest,
     db: Session = Depends(get_db),
-    user: models.User = Depends(get_current_user),
+    user: models.User = Depends(get_verified_user),
 ):
     """Record a feedback action. The signals feed back into THIS user's ranking:
       • save / unsave     → keep in 'Saved'; protected from re-rank cleanup.

@@ -16,3 +16,7 @@ os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 # Tests hammer endpoints far faster than real users — disable the IP limiter so
 # integration tests aren't throttled. (test_rate_limit.py toggles it back on.)
 os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
+# Most tests assume the legacy "signup returns a token immediately" behaviour.
+# The email-OTP flow is exercised explicitly in test_auth_verification.py, which
+# flips this back on via monkeypatch.
+os.environ.setdefault("REQUIRE_EMAIL_VERIFICATION", "false")

@@ -32,7 +32,8 @@ export default function Nav() {
   }
 
   // No nav chrome on the auth pages.
-  if (path.startsWith('/login') || path.startsWith('/signup')) return null;
+  if (path.startsWith('/login') || path.startsWith('/signup') || path.startsWith('/verify'))
+    return null;
 
   return (
     <nav className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">

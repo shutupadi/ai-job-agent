@@ -74,6 +74,12 @@ def _send_email(to: str, subject: str, html: str) -> bool:
     return False
 
 
+def send_email(to: str, subject: str, html: str) -> bool:
+    """Public transactional-email helper (reused by OTP / verification).
+    Returns True on success; safe no-op (False) when no provider is configured."""
+    return _send_email(to, subject, html)
+
+
 # ── html rendering ───────────────────────────────────────────────────
 def _job_row(job: models.Job, rk: models.Ranking) -> str:
     sig = rk.match_signals or {}

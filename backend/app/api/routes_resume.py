@@ -8,7 +8,7 @@ from typing import List
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
-from app.auth.deps import get_current_user
+from app.auth.deps import get_current_user, get_verified_user
 from app.auth.rate_limit import RateLimiter
 from app.config import settings
 from app.db import models
@@ -84,7 +84,7 @@ def my_resume(db: Session = Depends(get_db), user: models.User = Depends(get_cur
 async def upload_resume(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user: models.User = Depends(get_current_user),
+    user: models.User = Depends(get_verified_user),
 ):
     """Upload a PDF/DOCX/TXT résumé → AI parses it → becomes your active master."""
     data = await file.read()
@@ -170,7 +170,7 @@ def docs_for_job(
 def tailor(
     payload: TailorRequest,
     db: Session = Depends(get_db),
-    user: models.User = Depends(get_current_user),
+    user: models.User = Depends(get_verified_user),
 ):
     """Tailor YOUR master résumé to a job + generate a cover letter (downloads)."""
     job = db.get(models.Job, payload.job_id)

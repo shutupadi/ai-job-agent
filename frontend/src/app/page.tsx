@@ -5,12 +5,13 @@ import Link from 'next/link';
 import { api, DashboardSummary } from '@/lib/api';
 import { useAuth } from './AuthProvider';
 import ResumeUpload from './ResumeUpload';
+import GuestLanding from './GuestLanding';
 
 export default function HomePage() {
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const { user, refresh } = useAuth();
+  const { user, loading, refresh } = useAuth();
 
   async function load() {
     try {
@@ -20,10 +21,14 @@ export default function HomePage() {
     }
   }
   useEffect(() => {
+    if (!api.isAuthed()) return; // guests don't hit the authed dashboard
     load();
     const t = setInterval(load, 15000);
     return () => clearInterval(t);
   }, []);
+
+  // Logged-out visitor → guest résumé-upload landing.
+  if (!loading && !user) return <GuestLanding />;
 
   async function trigger() {
     setBusy(true);

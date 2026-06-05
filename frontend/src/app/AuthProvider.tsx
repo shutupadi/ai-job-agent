@@ -22,14 +22,20 @@ const Ctx = createContext<AuthCtx>({
 
 export const useAuth = () => useContext(Ctx);
 
-const PUBLIC = ['/login', '/signup'];
+// '/' is public so guests can upload a résumé before signing up; page.tsx shows
+// the guest landing when logged out and the dashboard when logged in.
+const PUBLIC = ['/', '/login', '/signup', '/verify'];
+const AUTH_PAGES = ['/login', '/signup', '/verify'];
 
 export default function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const path = usePathname();
-  const isPublic = PUBLIC.some(p => path.startsWith(p));
+  // Exact match for '/', prefix match for the rest.
+  const isPublic = path === '/' || PUBLIC.filter(p => p !== '/').some(p => path.startsWith(p));
+  const onAuthPage = AUTH_PAGES.some(p => path.startsWith(p));
+  const verified = !user || user.email_verified !== false;
 
   async function refresh() {
     if (!api.isAuthed()) {
@@ -50,12 +56,20 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     refresh();
   }, []); // eslint-disable-line
 
-  // Route guard: bounce unauthenticated users to /login, authed users away from auth pages.
+  // Route guard:
+  //  • not logged in + on a protected page → /login
+  //  • logged in but email NOT verified → /verify (locked out of everything else)
+  //  • logged in + verified, sitting on an auth page → /
   useEffect(() => {
     if (loading) return;
-    if (!user && !isPublic) router.replace('/login');
-    if (user && isPublic) router.replace('/');
-  }, [user, loading, isPublic]); // eslint-disable-line
+    if (!user && !isPublic) {
+      router.replace('/login');
+    } else if (user && !verified && path !== '/verify') {
+      router.replace('/verify');
+    } else if (user && verified && onAuthPage) {
+      router.replace('/');
+    }
+  }, [user, loading, isPublic, onAuthPage, verified, path]); // eslint-disable-line
 
   function setSession(token: string, u: User) {
     api.setToken(token);
@@ -71,6 +85,8 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
   if (loading) {
     body = <div className="max-w-6xl mx-auto px-6 py-16 text-muted">Loading…</div>;
   } else if (!user && !isPublic) {
+    body = <div className="max-w-6xl mx-auto px-6 py-16 text-muted">Redirecting…</div>;
+  } else if (user && !verified && path !== '/verify') {
     body = <div className="max-w-6xl mx-auto px-6 py-16 text-muted">Redirecting…</div>;
   }
 

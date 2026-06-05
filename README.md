@@ -96,6 +96,31 @@ explained matches rather than a flood of postings:
 - **Admin** — `/admin` shows users, résumé parse quality, runs, and source health.
   Grant access via `ADMIN_EMAILS`.
 
+## Onboarding & email verification (v3)
+
+A try-before-you-signup flow plus OTP-verified accounts:
+
+- **Guest résumé upload** — the landing page (`/`, no login) lets a visitor upload
+  a PDF/DOCX/TXT résumé. It's parsed with the same engine and shown as a preview:
+  career profile, experience level, target roles, primary skills, and a free
+  **sample-matches** teaser (deterministic, no LLM cost). The parse is stored
+  against an unguessable token for `GUEST_SESSION_TTL_HOURS` and cleaned up after.
+- **Signup → email OTP** — `POST /api/auth/signup-start` creates an *unverified*
+  account and emails a 6-digit code; `POST /api/auth/verify-email` confirms it and
+  logs the user in; `POST /api/auth/resend-otp` resends (throttled, no account
+  enumeration). The guest résumé is **attached to the new account** automatically.
+  Codes are HMAC-hashed (never stored in plaintext), expire in `OTP_TTL_MINUTES`,
+  and lock after `OTP_MAX_ATTEMPTS` wrong tries. The old `/api/auth/signup` route
+  still exists and is routed through verification for compatibility.
+- **Verified-only features** — `get_verified_user` gates run pipeline, rerank,
+  save/feedback, tailor, mark-applied, set alerts, and watchlist edits. Reading
+  (dashboard, jobs, profile) stays open to logged-in users.
+- **Graceful degradation** — verification is only *enforced* when it can be
+  delivered: with an email provider configured (any env) it sends real codes; in
+  dev without a provider the code is logged to the console (and returned as
+  `dev_otp`); in **prod without a provider** signups auto-verify so the live site
+  never bricks. Existing users and Google sign-ins are treated as verified.
+
 ## Quick start (Docker)
 
 ```bash

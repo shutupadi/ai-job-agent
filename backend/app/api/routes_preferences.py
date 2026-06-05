@@ -14,7 +14,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.auth.deps import get_current_user
+from app.auth.deps import get_current_user, get_verified_user
 from app.db import models
 from app.db.session import get_db
 from app.schemas.schemas import (
@@ -74,7 +74,7 @@ def get_preferences(
 def update_preferences(
     payload: UserPreferencesUpdate,
     db: Session = Depends(get_db),
-    user: models.User = Depends(get_current_user),
+    user: models.User = Depends(get_verified_user),
 ):
     p = _get_or_create_prefs(db, user.id)
     for field, value in payload.model_dump(exclude_unset=True).items():

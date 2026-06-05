@@ -137,6 +137,20 @@ class Settings(BaseSettings):
     max_resume_mb: int = 5
     max_ranks_per_user: int = 30
 
+    # ── Email verification (OTP) ──
+    # When True, new email/password signups must verify a 6-digit code emailed to
+    # them before sensitive features unlock. Verification is only ENFORCED when it
+    # can actually be delivered: if no email provider is configured AND we're in
+    # production, signups are auto-verified (graceful — the site keeps working);
+    # in dev the code is logged to the backend console so you can still test.
+    require_email_verification: bool = True
+    otp_length: int = 6
+    otp_ttl_minutes: int = 10
+    otp_max_attempts: int = 5          # wrong tries before a code is locked
+    otp_resend_seconds: int = 60       # min gap between resends per user
+    # Guest (pre-signup) résumé sessions live this long before cleanup.
+    guest_session_ttl_hours: int = 24
+
     # ── Rate limiting (per client IP, in-memory) ──
     # Disabled in tests; enabled by default in dev/prod. Tune the per-bucket
     # windows below if a bucket is too tight/loose for your traffic.

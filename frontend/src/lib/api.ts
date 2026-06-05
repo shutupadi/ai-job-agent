@@ -25,6 +25,27 @@ function clearToken() {
   } catch {}
 }
 
+// Guest résumé token (carried from the landing-page upload to signup).
+const GUEST_KEY = 'aijob_guest_token';
+function getGuestToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return localStorage.getItem(GUEST_KEY);
+  } catch {
+    return null;
+  }
+}
+function setGuestToken(t: string) {
+  try {
+    localStorage.setItem(GUEST_KEY, t);
+  } catch {}
+}
+function clearGuestToken() {
+  try {
+    localStorage.removeItem(GUEST_KEY);
+  } catch {}
+}
+
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   const isForm =
@@ -67,6 +88,7 @@ export type User = {
   avatar_url?: string | null;
   is_admin: boolean;
   has_resume: boolean;
+  email_verified?: boolean;
   experience_pref?: string; // 'fresher' | 'all'
 };
 
@@ -74,6 +96,28 @@ export type TokenResponse = {
   access_token: string;
   token_type: string;
   user: User;
+};
+
+// signup-start / resend-otp when verification is required (no token yet)
+export type AuthStartResponse = {
+  status: string; // 'otp_sent'
+  email: string;
+  verification_required: boolean;
+  dev_otp?: string | null; // only present in local dev w/o an email provider
+};
+
+export type GuestJobSample = {
+  title: string;
+  company: string;
+  location?: string | null;
+  remote: boolean;
+  url: string;
+};
+
+export type GuestUploadResponse = {
+  token: string;
+  profile: CareerProfile;
+  sample_matches: GuestJobSample[];
 };
 
 export type MasterResume = {
@@ -295,17 +339,46 @@ export const api = {
   getToken,
   setToken,
   clearToken,
+  getGuestToken,
+  setGuestToken,
+  clearGuestToken,
   isAuthed: () => !!getToken(),
   signup: (email: string, password: string, name?: string) =>
     http<TokenResponse>('/api/auth/signup', {
       method: 'POST',
       body: JSON.stringify({ email, password, name }),
     }),
+  // New onboarding: create account + send OTP (or log in directly if verification
+  // isn't enforced). Returns TokenResponse OR AuthStartResponse — caller checks
+  // for `access_token`.
+  signupStart: (email: string, password: string, name?: string, guest_token?: string) =>
+    http<TokenResponse | AuthStartResponse>('/api/auth/signup-start', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, name, guest_token }),
+    }),
+  verifyEmail: (email: string, code: string) =>
+    http<TokenResponse>('/api/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ email, code }),
+    }),
+  resendOtp: (email: string) =>
+    http<AuthStartResponse>('/api/auth/resend-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
   login: (email: string, password: string) =>
     http<TokenResponse>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     }),
+
+  // ── guest (no account) résumé upload ──
+  guestUpload: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return http<GuestUploadResponse>('/api/guest/upload', { method: 'POST', body: fd });
+  },
+  guestGet: (token: string) => http<GuestUploadResponse>(`/api/guest/${token}`),
   google: (credential: string) =>
     http<TokenResponse>('/api/auth/google', {
       method: 'POST',

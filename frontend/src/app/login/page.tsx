@@ -24,7 +24,14 @@ export default function LoginPage() {
       setSession(r.access_token, r.user);
       router.replace('/');
     } catch (e: any) {
-      setErr(e.message || 'Login failed');
+      const m = e.message || 'Login failed';
+      // Backend returns a 403 with a "verify" message for unverified accounts.
+      if (/verif/i.test(m)) {
+        try { localStorage.setItem('aijob_pending_email', email.trim()); } catch {}
+        router.push('/verify');
+        return;
+      }
+      setErr(m);
     } finally {
       setBusy(false);
     }

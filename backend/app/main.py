@@ -13,6 +13,7 @@ from app.api import (
     routes_applications,
     routes_auth,
     routes_dashboard,
+    routes_guest,
     routes_jobs,
     routes_preferences,
     routes_resume,
@@ -90,6 +91,7 @@ app.include_router(
     routes_preferences.router, prefix="/api/preferences", tags=["preferences"]
 )
 app.include_router(routes_watchlist.router, prefix="/api/watchlist", tags=["watchlist"])
+app.include_router(routes_guest.router, prefix="/api/guest", tags=["guest"])
 
 # Serve generated PDFs (read-only)
 app.mount("/files", StaticFiles(directory=str(settings.storage_dir)), name="files")

@@ -348,7 +348,50 @@ class UserOut(BaseModel):
     avatar_url: Optional[str] = None
     is_admin: bool = False
     has_resume: bool = False
+    email_verified: bool = True
     experience_pref: str = "fresher"  # 'fresher' (entry-only) | 'all'
+
+
+# ── Email verification (OTP) onboarding ──
+class SignupStartRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=200)
+    name: Optional[str] = None
+    # Optional token from a guest résumé upload to attach to the new account.
+    guest_token: Optional[str] = None
+
+
+class VerifyEmailRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=4, max_length=10)
+
+
+class ResendOtpRequest(BaseModel):
+    email: EmailStr
+
+
+class AuthStartResponse(BaseModel):
+    """Returned by signup-start when verification is required (no token yet)."""
+    status: str = "otp_sent"            # otp_sent | verified
+    email: str
+    verification_required: bool = True
+    # Only populated in local dev when no email provider is configured.
+    dev_otp: Optional[str] = None
+
+
+# ── Guest (pre-signup) résumé ──
+class GuestJobSample(BaseModel):
+    title: str
+    company: str
+    location: Optional[str] = None
+    remote: bool = False
+    url: str
+
+
+class GuestUploadResponse(BaseModel):
+    token: str
+    profile: "CareerProfileOut"
+    sample_matches: List[GuestJobSample] = []
 
 
 class PreferencesUpdate(BaseModel):

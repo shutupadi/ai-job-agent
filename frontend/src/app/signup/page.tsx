@@ -15,6 +15,7 @@ export default function SignupPage() {
   const [pw, setPw] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const hasGuest = typeof window !== 'undefined' && !!api.getGuestToken();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -25,9 +26,18 @@ export default function SignupPage() {
     }
     setBusy(true);
     try {
-      const r = await api.signup(email.trim(), pw, name.trim() || undefined);
-      setSession(r.access_token, r.user);
-      router.replace('/');
+      const guestToken = api.getGuestToken() || undefined;
+      const r = await api.signupStart(email.trim(), pw, name.trim() || undefined, guestToken);
+      if ('access_token' in r) {
+        // Verification not enforced (no email provider in prod) → straight in.
+        api.clearGuestToken();
+        setSession(r.access_token, r.user);
+        router.replace('/');
+      } else {
+        // OTP sent → go verify. (Guest token stays until verification completes.)
+        try { localStorage.setItem('aijob_pending_email', email.trim()); } catch {}
+        router.push('/verify');
+      }
     } catch (e: any) {
       setErr(e.message || 'Sign up failed');
     } finally {
@@ -45,6 +55,9 @@ export default function SignupPage() {
           </div>
           <h1 className="text-xl font-bold mt-3">Create your account</h1>
           <p className="text-muted text-sm">Find jobs tailored to your résumé</p>
+          {hasGuest && (
+            <p className="pill-good mt-2 inline-block">✓ Your uploaded résumé will be saved</p>
+          )}
         </div>
         <form onSubmit={submit} className="space-y-3">
           <input

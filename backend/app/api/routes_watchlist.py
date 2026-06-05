@@ -14,7 +14,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.auth.deps import get_current_user
+from app.auth.deps import get_current_user, get_verified_user
 from app.db import models
 from app.db.session import get_db
 from app.schemas.schemas import WatchlistCreate, WatchlistOut, WatchlistPatch
@@ -44,7 +44,7 @@ def list_watchlist(
 def add_company(
     payload: WatchlistCreate,
     db: Session = Depends(get_db),
-    user: models.User = Depends(get_current_user),
+    user: models.User = Depends(get_verified_user),
 ):
     norm = company_quality.normalize(payload.company)
     if not norm:
@@ -77,7 +77,7 @@ def update_company(
     item_id: str,
     payload: WatchlistPatch,
     db: Session = Depends(get_db),
-    user: models.User = Depends(get_current_user),
+    user: models.User = Depends(get_verified_user),
 ):
     w = db.get(models.WatchlistCompany, item_id)
     if not w or w.user_id != user.id:
@@ -92,7 +92,7 @@ def update_company(
 def remove_company(
     item_id: str,
     db: Session = Depends(get_db),
-    user: models.User = Depends(get_current_user),
+    user: models.User = Depends(get_verified_user),
 ):
     w = db.get(models.WatchlistCompany, item_id)
     if not w or w.user_id != user.id:

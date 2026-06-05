@@ -64,6 +64,11 @@ class User(Base):
     avatar_url: Mapped[Optional[str]] = mapped_column(String(512))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Email-OTP verification. Existing users are grandfathered to True in the
+    # migration; Google sign-ins are verified by Google. New email/password
+    # signups start False until they confirm the code.
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    email_verified_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime)
     # 'fresher' = only entry-level jobs (deterministic filter); 'all' = every
     # level, matched to the user's résumé. Defaults to fresher (protects new
     # grads from senior-role noise; experienced users toggle it off).
@@ -369,3 +374,43 @@ class CompanyTierOverride(Base):
     company: Mapped[str] = mapped_column(String(255), nullable=False)
     tier: Mapped[int] = mapped_column(Integer, nullable=False)  # 1..4, 5 = avoid
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
+
+
+# ─── EmailOTP (email verification / future password reset) ───────────
+class EmailOTP(Base):
+    """A one-time code emailed to a user. The plaintext code is NEVER stored —
+    only an HMAC-SHA256 hash. Codes expire and lock after too many wrong tries."""
+
+    __tablename__ = "email_otps"
+    __table_args__ = (Index("ix_email_otps_user_purpose", "user_id", "purpose"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    otp_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(20), default="signup")  # signup|login|password_reset
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    consumed_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_now)
+
+
+# ─── GuestSession (pre-signup résumé parse) ──────────────────────────
+class GuestSession(Base):
+    """A résumé parsed for a not-yet-registered visitor. Identified by an
+    unguessable token; expires and is cleaned up. Claimed once attached to a
+    new user at signup."""
+
+    __tablename__ = "guest_sessions"
+    __table_args__ = (Index("ix_guest_sessions_token", "token"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    filename: Mapped[Optional[str]] = mapped_column(String(255))
+    raw_text: Mapped[Optional[str]] = mapped_column(Text)
+    parsed_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    claimed: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_now)
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False)

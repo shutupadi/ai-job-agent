@@ -48,6 +48,26 @@ def get_current_admin(
     return user
 
 
+def get_verified_user(
+    user: models.User = Depends(get_current_user),
+) -> models.User:
+    """Require a logged-in AND email-verified user for sensitive actions
+    (run pipeline, rerank, save/feedback, tailor, mark applied, set alerts).
+
+    When verification isn't being enforced (no email provider in prod, or it's
+    disabled), this is equivalent to get_current_user — so the platform degrades
+    gracefully and never locks people out."""
+    # Imported here to avoid a circular import (services → config → …).
+    from app.services.otp import verification_active
+
+    if verification_active() and not user.email_verified:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Please verify your email to use this feature.",
+        )
+    return user
+
+
 def get_current_user_optional(
     creds: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
     db: Session = Depends(get_db),

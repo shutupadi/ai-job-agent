@@ -28,6 +28,7 @@ from app.services import (
     company_quality,
     experience_filter,
     geo_filter,
+    guest,
     ranking,
     relevance,
     resume_engine,
@@ -330,6 +331,12 @@ def _run_pipeline(trigger: str, user_id: Optional[str], scan_mode: str = "broad"
     pruned = prune_old_jobs(settings.job_retention_days) if fetched else 0
     if pruned:
         log.info(f"Pruned {pruned} old jobs (>{settings.job_retention_days}d, unused)")
+    if fetched:
+        try:
+            with session_scope() as db:
+                guest.cleanup_expired(db)
+        except Exception as e:
+            log.warning(f"Guest cleanup failed: {e}")
 
     # ── 3. finalise ──
     with session_scope() as db:
