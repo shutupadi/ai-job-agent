@@ -146,6 +146,14 @@ export default function AdminPage() {
               REQUIRE_EMAIL_VERIFICATION).
             </p>
           )}
+          {sys.sender_freemail && (
+            <p className="text-warn text-sm">
+              ⚠ EMAIL_FROM ({sys.email_from}) uses a freemail domain. Gmail/Outlook often
+              drop or spam-folder mail "from" gmail/yahoo/outlook even when the API says
+              "sent" (DMARC). Verify your own domain in {sys.email_provider || 'your provider'}{' '}
+              and send from e.g. noreply@yourdomain — otherwise OTP/reset codes may not arrive.
+            </p>
+          )}
         </section>
       )}
 

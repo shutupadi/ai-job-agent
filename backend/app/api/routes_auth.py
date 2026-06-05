@@ -30,6 +30,7 @@ from app.schemas.schemas import (
     VerifyEmailRequest,
 )
 from app.services import guest, otp
+from app.utils.logger import log
 
 router = APIRouter()
 
@@ -186,13 +187,20 @@ def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db
     email = payload.email.lower().strip()
     user = db.query(models.User).filter(models.User.email == email).first()
     out = AuthStartResponse(status="otp_sent", email=email, verification_required=True)
-    # Only send to real accounts that actually have a password to reset.
-    if not user or not user.password_hash:
+    if not user:
+        log.info(f"[forgot-password] no account for {email} — generic response")
         return out
+    # NOTE: we intentionally send for Google-only accounts too (no password yet),
+    # so the owner can SET a password via the reset flow and use email login.
     if otp.seconds_until_resend(db, user.id, "password_reset") > 0:
+        log.info(f"[forgot-password] cooldown active for {email} — skipping resend")
         return out  # silently respect cooldown (still generic)
     code = otp.create_and_send(db, user, "password_reset")
     db.commit()
+    log.info(
+        f"[forgot-password] reset code issued for {email} "
+        f"(provider={settings.email_provider or 'none'}, email_enabled={otp.alerts.email_enabled()})"
+    )
     out.dev_otp = code if otp._expose_dev_otp() else None
     return out
 

@@ -196,7 +196,9 @@ class AdminSourceOut(BaseModel):
 class SystemHealthOut(BaseModel):
     app_env: str
     email_provider: str = ""
+    email_from: str = ""
     email_enabled: bool = False
+    sender_freemail: bool = False  # EMAIL_FROM is a freemail domain (poor delivery)
     verification_required: bool = False
     verification_active: bool = False
     email_misconfigured: bool = False

@@ -238,7 +238,9 @@ export type AdminSource = {
 export type SystemHealth = {
   app_env: string;
   email_provider: string;
+  email_from: string;
   email_enabled: boolean;
+  sender_freemail: boolean;
   verification_required: boolean;
   verification_active: boolean;
   email_misconfigured: boolean;

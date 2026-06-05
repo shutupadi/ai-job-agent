@@ -208,7 +208,9 @@ def system_health(_: models.User = Depends(get_current_admin)):
     return SystemHealthOut(
         app_env=settings.app_env,
         email_provider=settings.email_provider or "",
+        email_from=settings.email_from or "",
         email_enabled=alerts.email_enabled(),
+        sender_freemail=alerts.sender_is_freemail(),
         verification_required=settings.require_email_verification,
         verification_active=otp.verification_active(),
         email_misconfigured=otp.email_misconfigured(),

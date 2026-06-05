@@ -130,6 +130,24 @@ def test_forgot_password_unknown_email_is_generic(client):
     assert r.status_code == 200 and r.json()["status"] == "otp_sent"
 
 
+def test_forgot_password_works_for_google_only_account(client):
+    # Google-created accounts have no password_hash — forgot-password must still
+    # issue a code so the owner can SET a password and use email login.
+    with client._Session() as s:
+        s.add(models.User(email="g@test.com", google_sub="gsub-1",
+                          password_hash=None, email_verified=True))
+        s.commit()
+    r = client.post("/api/auth/forgot-password", json={"email": "g@test.com"})
+    assert r.status_code == 200
+    code = r.json().get("dev_otp")
+    assert code, "Google-only account should still receive a reset code"
+    ok = client.post("/api/auth/reset-password",
+                     json={"email": "g@test.com", "code": code, "new_password": "brandnew123"})
+    assert ok.status_code == 200 and ok.json()["access_token"]
+    assert client.post("/api/auth/login",
+                       json={"email": "g@test.com", "password": "brandnew123"}).status_code == 200
+
+
 def test_reset_password_expired_code(client):
     _signup(client, "exp@test.com", "oldpassword1")
     r = client.post("/api/auth/forgot-password", json={"email": "exp@test.com"})

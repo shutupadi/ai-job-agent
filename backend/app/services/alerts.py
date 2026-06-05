@@ -34,6 +34,25 @@ def email_enabled() -> bool:
     return False
 
 
+# Freemail domains that providers can't DKIM/DMARC-align → Gmail/Outlook often
+# silently drop or spam-folder mail "From" these. Using one as EMAIL_FROM is the
+# #1 reason transactional codes don't arrive even when the API reports "sent".
+_FREEMAIL = {
+    "gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.in", "ymail.com",
+    "outlook.com", "hotmail.com", "live.com", "icloud.com", "aol.com",
+    "proton.me", "protonmail.com", "rediffmail.com",
+}
+
+
+def sender_is_freemail() -> bool:
+    """True when EMAIL_FROM uses a freemail domain (poor deliverability)."""
+    addr = settings.email_from or ""
+    if "<" in addr and ">" in addr:
+        addr = addr.split("<", 1)[1].split(">", 1)[0]
+    domain = addr.split("@")[-1].strip().lower()
+    return domain in _FREEMAIL
+
+
 def _post_email(to: str, subject: str, html: str) -> tuple[bool, Optional[str]]:
     """Send one email. Returns (ok, error_detail). The error_detail includes the
     provider's HTTP status + response body so failures (blocked IP, unverified
