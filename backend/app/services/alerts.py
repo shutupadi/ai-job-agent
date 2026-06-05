@@ -34,10 +34,12 @@ def email_enabled() -> bool:
     return False
 
 
-def _send_email(to: str, subject: str, html: str) -> bool:
-    """Returns True on success. Safe no-op (False) if provider not configured."""
+def _post_email(to: str, subject: str, html: str) -> tuple[bool, Optional[str]]:
+    """Send one email. Returns (ok, error_detail). The error_detail includes the
+    provider's HTTP status + response body so failures (blocked IP, unverified
+    sender, bad key) are diagnosable in the logs / the admin email-test."""
     if not email_enabled() or not to:
-        return False
+        return False, "Email provider not configured (set EMAIL_PROVIDER + key + EMAIL_FROM)."
     provider = settings.email_provider.lower()
     try:
         if provider == "resend":
@@ -47,9 +49,7 @@ def _send_email(to: str, subject: str, html: str) -> bool:
                 json={"from": settings.email_from, "to": [to], "subject": subject, "html": html},
                 timeout=20,
             )
-            r.raise_for_status()
-            return True
-        if provider == "brevo":
+        elif provider == "brevo":
             # Brevo expects {name,email}; accept "Name <email>" or bare email.
             sender = settings.email_from
             name, addr = ("AI Job Agent", sender)
@@ -67,17 +67,49 @@ def _send_email(to: str, subject: str, html: str) -> bool:
                 },
                 timeout=20,
             )
-            r.raise_for_status()
-            return True
+        else:
+            return False, f"Unknown EMAIL_PROVIDER '{provider}' (use resend|brevo)."
+        if r.status_code // 100 == 2:
+            return True, None
+        detail = f"{provider} HTTP {r.status_code}: {r.text[:400]}"
+        log.warning(f"Email send failed — {detail}")
+        return False, detail
     except Exception as e:  # noqa: BLE001
-        log.warning(f"Alert email send failed ({provider}): {e}")
-    return False
+        detail = f"{provider} request error: {e}"
+        log.warning(f"Email send failed — {detail}")
+        return False, detail
+
+
+def _send_email(to: str, subject: str, html: str) -> bool:
+    """Returns True on success. Safe no-op (False) if provider not configured."""
+    ok, _ = _post_email(to, subject, html)
+    return ok
 
 
 def send_email(to: str, subject: str, html: str) -> bool:
     """Public transactional-email helper (reused by OTP / verification).
     Returns True on success; safe no-op (False) when no provider is configured."""
     return _send_email(to, subject, html)
+
+
+def send_test(to: str) -> dict:
+    """Admin diagnostic — try a real send and report exactly what happened."""
+    info: dict = {
+        "provider": settings.email_provider or "",
+        "enabled": email_enabled(),
+        "from": settings.email_from or "",
+        "to": to,
+    }
+    if not email_enabled():
+        info.update(ok=False, error="Email not configured: set EMAIL_PROVIDER, the API key, and EMAIL_FROM.")
+        return info
+    ok, err = _post_email(
+        to,
+        "AI Job Agent — test email ✅",
+        "<p>Your email setup works — OTP verification emails will be delivered.</p>",
+    )
+    info.update(ok=ok, error=err)
+    return info
 
 
 # ── html rendering ───────────────────────────────────────────────────

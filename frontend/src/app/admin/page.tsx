@@ -52,6 +52,9 @@ export default function AdminPage() {
         <p className="text-muted text-sm">Read-only platform overview. No data is modified here.</p>
       </header>
 
+      <EmailDiagnostics />
+
+
       <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Metric label="Users" value={stats.total_users} />
         <Metric label="Active" value={stats.active_users} />
@@ -187,5 +190,67 @@ function Metric({ label, value }: { label: string; value: number | string }) {
       <div className="kv">{label}</div>
       <div className="text-2xl font-bold text-ink">{value}</div>
     </div>
+  );
+}
+
+function EmailDiagnostics() {
+  const [to, setTo] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState<Awaited<ReturnType<typeof api.adminEmailTest>> | null>(null);
+
+  async function run() {
+    setBusy(true);
+    setRes(null);
+    try {
+      setRes(await api.adminEmailTest(to.trim() || undefined));
+    } catch (e: any) {
+      setRes({ provider: '', enabled: false, from: '', to, ok: false, error: e.message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card space-y-3">
+      <h2 className="font-semibold">Email / OTP diagnostics</h2>
+      <p className="kv">
+        Sends a real test email and shows exactly what the provider returned —
+        use this to debug OTP delivery.
+      </p>
+      <div className="flex flex-wrap gap-2 items-center">
+        <input
+          className="inp max-w-xs"
+          placeholder="send to (defaults to your email)"
+          value={to}
+          onChange={e => setTo(e.target.value)}
+        />
+        <button className="btn" onClick={run} disabled={busy}>
+          {busy ? 'Sending…' : 'Send test email'}
+        </button>
+      </div>
+      {res && (
+        <div className="text-sm space-y-1">
+          <div className="flex flex-wrap gap-2">
+            <span className="pill-mute">provider: {res.provider || '—'}</span>
+            <span className={res.enabled ? 'pill-good' : 'pill-bad'}>
+              {res.enabled ? 'configured' : 'not configured'}
+            </span>
+            <span className={res.verification_active ? 'pill-good' : 'pill-warn'}>
+              OTP {res.verification_active ? 'enforced' : 'auto-verify (off)'}
+            </span>
+            <span className={res.ok ? 'pill-good' : 'pill-bad'}>
+              {res.ok ? 'sent ✓' : 'send failed'}
+            </span>
+          </div>
+          <div className="kv">from: {res.from || '—'} → to: {res.to}</div>
+          {res.error && (
+            <pre className="text-xs text-bad whitespace-pre-wrap bg-rose-50 dark:bg-rose-900/20 rounded p-2">
+              {res.error}
+            </pre>
+          )}
+          {res.ok && <p className="text-good">Check that inbox (and spam).</p>}
+        </div>
+      )}
+    </section>
   );
 }

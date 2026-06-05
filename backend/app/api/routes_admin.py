@@ -9,7 +9,7 @@ the UI instead of shelling into the DB.
 from __future__ import annotations
 
 import os
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -27,7 +27,7 @@ from app.schemas.schemas import (
     RunOut,
     SourceHealthOut,
 )
-from app.services import company_quality, source_health
+from app.services import alerts, company_quality, source_health
 
 router = APIRouter()
 
@@ -164,6 +164,21 @@ def source_health_report(
     db: Session = Depends(get_db), _: models.User = Depends(get_current_admin)
 ):
     return [SourceHealthOut.model_validate(r) for r in source_health.all_health(db)]
+
+
+@router.get("/email-test")
+def email_test(
+    to: Optional[str] = None,
+    admin: models.User = Depends(get_current_admin),
+):
+    """Send a real test email and return exactly what the provider said. Use this
+    to debug OTP delivery (blocked IP, unverified sender, bad key, etc.).
+    Defaults to emailing the admin's own address."""
+    from app.services import otp
+
+    result = alerts.send_test(to or admin.email)
+    result["verification_active"] = otp.verification_active()
+    return result
 
 
 @router.get("/company-tiers", response_model=List[CompanyTierOut])

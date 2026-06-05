@@ -487,4 +487,14 @@ export const api = {
   adminUsers: () => http<AdminUser[]>('/api/admin/users'),
   adminRuns: () => http<Run[]>('/api/admin/runs'),
   adminSourceHealth: () => http<SourceHealth[]>('/api/admin/source-health'),
+  adminEmailTest: (to?: string) =>
+    http<{
+      provider: string;
+      enabled: boolean;
+      from: string;
+      to: string;
+      ok?: boolean;
+      error?: string | null;
+      verification_active?: boolean;
+    }>(`/api/admin/email-test${to ? `?to=${encodeURIComponent(to)}` : ''}`),
 };
