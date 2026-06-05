@@ -18,7 +18,16 @@ from app.auth.deps import get_current_admin, is_admin
 from app.config import settings
 from app.db import models
 from app.db.session import get_db
-from app.schemas.schemas import AdminResumeOut, AdminStats, AdminUserOut, RunOut
+from app.schemas.schemas import (
+    AdminResumeOut,
+    AdminStats,
+    AdminUserOut,
+    CompanyTierOut,
+    CompanyTierUpsert,
+    RunOut,
+    SourceHealthOut,
+)
+from app.services import company_quality, source_health
 
 router = APIRouter()
 
@@ -148,3 +157,36 @@ def list_runs(
         .all()
     )
     return [RunOut.model_validate(r) for r in rows]
+
+
+@router.get("/source-health", response_model=List[SourceHealthOut])
+def source_health_report(
+    db: Session = Depends(get_db), _: models.User = Depends(get_current_admin)
+):
+    return [SourceHealthOut.model_validate(r) for r in source_health.all_health(db)]
+
+
+@router.get("/company-tiers", response_model=List[CompanyTierOut])
+def list_company_tiers(
+    db: Session = Depends(get_db), _: models.User = Depends(get_current_admin)
+):
+    rows = db.query(models.CompanyTierOverride).order_by(models.CompanyTierOverride.tier).all()
+    return [CompanyTierOut(company=r.company, tier=r.tier) for r in rows]
+
+
+@router.put("/company-tiers", response_model=CompanyTierOut)
+def upsert_company_tier(
+    payload: CompanyTierUpsert,
+    db: Session = Depends(get_db),
+    _: models.User = Depends(get_current_admin),
+):
+    norm = company_quality.normalize(payload.company)
+    row = db.get(models.CompanyTierOverride, norm)
+    if row is None:
+        row = models.CompanyTierOverride(company_norm=norm, company=payload.company.strip(), tier=payload.tier)
+        db.add(row)
+    else:
+        row.company = payload.company.strip()
+        row.tier = payload.tier
+    db.commit()
+    return CompanyTierOut(company=row.company, tier=row.tier)

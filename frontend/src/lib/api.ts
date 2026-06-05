@@ -102,9 +102,75 @@ export type Job = {
   rank_breakdown?: Record<string, number> | null;
   rank_reasoning?: string | null;
   ats_keywords?: string[] | null;
+  match_label?: string | null;
+  match_signals?: MatchSignals | null;
+  apply_type?: string;
+  company_tier?: number | null;
+  watchlisted?: boolean;
+  saved?: boolean;
+  hidden?: boolean;
   status: string;
   auto_apply: boolean;
   applied_manually_at?: string | null;
+};
+
+export type MatchSignals = {
+  role?: number;
+  experience?: number;
+  skills?: number;
+  company?: number;
+  recency?: number;
+  salary_location?: number;
+  matched_skills?: string[];
+  missing_skills?: string[];
+  company_tier?: number;
+  watchlisted?: boolean;
+  reasons?: string[];
+};
+
+export type UserPreferences = {
+  target_roles: string[];
+  experience_level?: string | null;
+  min_salary_lpa?: number | null;
+  preferred_cities: string[];
+  work_modes: string[];
+  job_types: string[];
+  prioritized_industries: string[];
+  blocked_industries: string[];
+  preferred_countries: string[];
+  needs_sponsorship: boolean;
+  excluded_keywords: string[];
+  must_have_skills: string[];
+  nice_to_have_skills: string[];
+  alert_instant: boolean;
+  alert_daily_digest: boolean;
+};
+
+export type CareerProfile = {
+  name: string;
+  experience_years: number;
+  seniority: string;
+  role_direction: string;
+  current_role: string;
+  current_company: string;
+  target_titles: string[];
+  target_job_types: string[];
+  domains: string[];
+  primary_skills: string[];
+  summary: string;
+};
+
+export type WatchlistItem = { id: string; company: string; priority: string };
+
+export type SourceHealth = {
+  source: string;
+  last_run_at?: string | null;
+  last_success_at?: string | null;
+  jobs_found: number;
+  jobs_added: number;
+  total_runs: number;
+  failures: number;
+  last_error?: string | null;
 };
 
 export type Application = {
@@ -278,6 +344,37 @@ export const api = {
     http<RerankResponse>(`/api/jobs/rerank?scope=${scope}`, { method: 'POST' }),
   resetRankings: (scope: 'ranked' | 'all' = 'ranked') =>
     http<RerankResponse>(`/api/jobs/reset-rankings?scope=${scope}`, { method: 'POST' }),
+  jobFeedback: (
+    id: string,
+    action: 'save' | 'unsave' | 'not_relevant' | 'more_like_this' | 'hide_company',
+  ) =>
+    http<Job>(`/api/jobs/${id}/feedback`, {
+      method: 'POST',
+      body: JSON.stringify({ action }),
+    }),
+
+  // ── preferences + career profile ──
+  preferences: () => http<UserPreferences>('/api/preferences'),
+  updatePreferences: (body: Partial<UserPreferences>) =>
+    http<UserPreferences>('/api/preferences', { method: 'PUT', body: JSON.stringify(body) }),
+  careerProfile: () => http<CareerProfile>('/api/preferences/profile'),
+  updateCareerProfile: (body: Partial<CareerProfile>) =>
+    http<CareerProfile>('/api/preferences/profile', { method: 'PUT', body: JSON.stringify(body) }),
+
+  // ── watchlist ──
+  watchlist: () => http<WatchlistItem[]>('/api/watchlist'),
+  addWatchlist: (company: string, priority = 'prioritize') =>
+    http<WatchlistItem>('/api/watchlist', {
+      method: 'POST',
+      body: JSON.stringify({ company, priority }),
+    }),
+  patchWatchlist: (id: string, priority: string) =>
+    http<WatchlistItem>(`/api/watchlist/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ priority }),
+    }),
+  removeWatchlist: (id: string) =>
+    http<void>(`/api/watchlist/${id}`, { method: 'DELETE' }),
 
   // ── applications ──
   applications: (params: Record<string, string | number> = {}) => {
@@ -316,4 +413,5 @@ export const api = {
   adminStats: () => http<AdminStats>('/api/admin/stats'),
   adminUsers: () => http<AdminUser[]>('/api/admin/users'),
   adminRuns: () => http<Run[]>('/api/admin/runs'),
+  adminSourceHealth: () => http<SourceHealth[]>('/api/admin/source-health'),
 };

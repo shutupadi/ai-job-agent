@@ -162,9 +162,16 @@ class Settings(BaseSettings):
     enable_naukri: bool = False
     enable_wellfound: bool = False
     enable_adzuna: bool = False
+    enable_ashby: bool = False
+    enable_smartrecruiters: bool = False
 
     greenhouse_boards_raw: str = Field(default="", alias="GREENHOUSE_BOARDS")
     lever_companies_raw: str = Field(default="", alias="LEVER_COMPANIES")
+    # Ashby public job-board names (comma-separated), e.g. "openai,ramp,notion".
+    ashby_boards_raw: str = Field(default="", alias="ASHBY_BOARDS")
+    # SmartRecruiters company identifiers (comma-separated), e.g. "Visa,Square".
+    smartrecruiters_companies_raw: str = Field(default="", alias="SMARTRECRUITERS_COMPANIES")
+    smartrecruiters_max_per_company: int = 40
     # Workday career sites. CSV of "host|tenant|site" triples, e.g.
     #   nvidia.wd5.myworkdayjobs.com|nvidia|NVIDIAExternalCareerSite
     # (comma-separated for multiple companies).
@@ -223,14 +230,37 @@ class Settings(BaseSettings):
     # ── Scheduler ──
     schedule_cron_morning: str = "0 9 * * *"
     schedule_cron_evening: str = "0 19 * * *"
+    # Fast watchlist scan cadence (minutes) — re-ranks prioritised-company jobs
+    # for near-real-time alerts. Only used by the scheduler daemon / cron command.
+    schedule_watchlist_minutes: int = 30
+    # Daily digest send time (cron, in TZ).
+    schedule_cron_digest: str = "30 8 * * *"
 
-    # ── Notifications ──
+    # ── Notifications (legacy SMTP summary) ──
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_pass: str = ""
     smtp_from: str = ""
     summary_email_to: str = ""
+
+    # ── Job alerts (per-user email) ──
+    # Provider for transactional email. "" disables alerts (graceful no-op).
+    # "resend"  → set RESEND_API_KEY (https://resend.com)
+    # "brevo"   → set BREVO_API_KEY  (https://brevo.com)
+    email_provider: str = ""
+    resend_api_key: str = ""
+    brevo_api_key: str = ""
+    # From address, e.g. "AI Job Agent <alerts@yourdomain.com>" (must be a
+    # verified sender/domain on the provider).
+    email_from: str = ""
+    # Minimum hybrid score for an "excellent match" instant alert.
+    alert_min_score: int = 80
+    # Don't send more than one instant alert per this many minutes per user.
+    alert_min_interval_minutes: int = 30
+    # Placeholder hooks for future channels (kept off / unused for now).
+    telegram_bot_token: str = ""
+    telegram_default_chat_id: str = ""
 
     # ── Paths ──
     project_root: Path = Path(__file__).resolve().parent.parent
@@ -279,6 +309,14 @@ class Settings(BaseSettings):
     @property
     def lever_companies(self) -> List[str]:
         return _csv(self.lever_companies_raw)
+
+    @property
+    def ashby_boards(self) -> List[str]:
+        return _csv(self.ashby_boards_raw)
+
+    @property
+    def smartrecruiters_companies(self) -> List[str]:
+        return _csv(self.smartrecruiters_companies_raw)
 
     @property
     def admin_emails(self) -> List[str]:

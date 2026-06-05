@@ -61,6 +61,41 @@ grounded, no fabrication) and gives you the PDFs to apply with. Runs every 12h.
 9. **Safety** — rate limits, captcha/wall detection, secrets via env only, no
    fabrication in résumés.
 
+## Job-intelligence layer (v2)
+
+Built for **quality over quantity** — a smaller set of genuinely excellent,
+explained matches rather than a flood of postings:
+
+- **Career profile** — the parsed résumé is upgraded into a structured, **editable**
+  profile (experience, seniority, role direction, target titles, domains, skills).
+  Edit it in **Preferences** so ranking uses corrected values, not raw AI guesses.
+- **Preferences** — target roles, min salary, cities, work mode, job types,
+  must-have / nice-to-have skills, blocked industries, excluded keywords, visa
+  needs, and alert settings. All feed the ranker.
+- **Company watchlist** — prioritise / block companies per user. Prioritised
+  companies are scanned more often and **boosted (only when role fit is good)**.
+- **Company-quality tiers** (1–4, plus an "avoid" tier for spam/consultancy/scam
+  postings) used as a ranking signal — never a substitute for role fit. Admin
+  overridable.
+- **Hybrid explainable ranking** — deterministic signals fused with the LLM:
+  role 30% · experience 25% · skills 20% · company/watchlist 10% · recency 10% ·
+  salary/location 5%. Each job shows a **match label** (Excellent / Good / Maybe /
+  Not recommended), **matched & missing skills**, and **why it's shown**.
+  Hard rules drop wrong-profession, wrong-level, blocked, and scam postings.
+- **Feedback learning** — Save · More like this · Not relevant · Hide company.
+  Choices reshape that user's future rankings (and persist across re-ranks).
+- **Re-rank / reset** — re-score from the shared pool against your latest résumé +
+  preferences; saved / tailored / applied jobs are always preserved.
+- **Alerts** — instant email for excellent matches + a daily digest (Resend or
+  Brevo; safe no-op until configured). A fast **watchlist scan** (every ~30 min via
+  the scheduler) powers near-real-time alerts; broad scans run every 6–12h.
+- **More sources** — added **Ashby** and **SmartRecruiters** public-API adapters
+  (config-driven, fail-graceful). Every source records **health** (last run, found,
+  added, failures, last error) visible in the admin dashboard. Jobs are tagged
+  `direct` / `external` / `discovery`.
+- **Admin** — `/admin` shows users, résumé parse quality, runs, and source health.
+  Grant access via `ADMIN_EMAILS`.
+
 ## Quick start (Docker)
 
 ```bash

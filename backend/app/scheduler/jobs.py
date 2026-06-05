@@ -14,8 +14,10 @@ import sys
 import typer
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from app.config import settings
+from app.services import alerts
 from app.services.pipeline import run_pipeline
 from app.utils.logger import log
 
@@ -51,9 +53,25 @@ def _evening_run():
         log.exception("Evening pipeline crashed")
 
 
+def _watchlist_run():
+    log.info("Watchlist scan (fast)")
+    try:
+        run_pipeline(trigger="cron-watchlist", scan_mode="watchlist")
+    except Exception:
+        log.exception("Watchlist scan crashed")
+
+
+def _digest_run():
+    log.info("Daily digest")
+    try:
+        alerts.send_daily_digest()
+    except Exception:
+        log.exception("Daily digest crashed")
+
+
 @cli.command()
 def daemon():
-    """Block forever, running the pipeline on schedule."""
+    """Block forever, running the broad + watchlist scans on schedule."""
     sched = BlockingScheduler(timezone=settings.tz)
     sched.add_job(
         _morning_run,
@@ -67,10 +85,24 @@ def daemon():
         id="evening",
         replace_existing=True,
     )
+    sched.add_job(
+        _watchlist_run,
+        IntervalTrigger(minutes=settings.schedule_watchlist_minutes),
+        id="watchlist",
+        replace_existing=True,
+    )
+    sched.add_job(
+        _digest_run,
+        _make_cron(settings.schedule_cron_digest),
+        id="digest",
+        replace_existing=True,
+    )
     log.info(
         f"Scheduler started (tz={settings.tz}): "
         f"morning='{settings.schedule_cron_morning}' "
-        f"evening='{settings.schedule_cron_evening}'"
+        f"evening='{settings.schedule_cron_evening}' "
+        f"watchlist every {settings.schedule_watchlist_minutes}m "
+        f"digest='{settings.schedule_cron_digest}'"
     )
 
     def _shutdown(signum, frame):  # noqa: D401
@@ -85,9 +117,30 @@ def daemon():
 
 @cli.command("run-once")
 def run_once(trigger: str = typer.Option("manual", help="Trigger label to record.")):
-    """Execute the pipeline once and exit."""
+    """Execute the broad pipeline once and exit."""
     rid = run_pipeline(trigger=trigger)
     typer.echo(f"Run {rid} finished")
+
+
+@cli.command("watchlist-scan")
+def watchlist_scan():
+    """Fast scan: re-rank watchlist-company jobs for all users + fire alerts."""
+    rid = run_pipeline(trigger="cron-watchlist", scan_mode="watchlist")
+    typer.echo(f"Watchlist scan {rid} finished")
+
+
+@cli.command("broad-scan")
+def broad_scan():
+    """Full scan: fetch all sources + rank for all users."""
+    rid = run_pipeline(trigger="cron-broad")
+    typer.echo(f"Broad scan {rid} finished")
+
+
+@cli.command("daily-digest")
+def daily_digest():
+    """Send the daily digest email to opted-in users."""
+    n = alerts.send_daily_digest()
+    typer.echo(f"Daily digest sent to {n} user(s)")
 
 
 if __name__ == "__main__":

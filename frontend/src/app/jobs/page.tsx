@@ -9,8 +9,11 @@ type Filters = {
   minRank: number | '';
   source: string;
   status: string;
+  matchLevel: string;
   remoteOnly: boolean;
   topOnly: boolean;
+  watchlistOnly: boolean;
+  savedOnly: boolean;
   postedWithin: number | '';
   sort: 'rank' | 'recent';
 };
@@ -20,8 +23,11 @@ const EMPTY: Filters = {
   minRank: '',
   source: '',
   status: '',
+  matchLevel: '',
   remoteOnly: false,
   topOnly: false,
+  watchlistOnly: false,
+  savedOnly: false,
   postedWithin: '',
   sort: 'rank',
 };
@@ -44,8 +50,11 @@ export default function JobsPage() {
     if (cur.minRank !== '' && cur.minRank != null) params.min_rank = Number(cur.minRank);
     if (cur.source) params.source = cur.source;
     if (cur.status) params.status = cur.status;
+    if (cur.matchLevel) params.match_level = cur.matchLevel;
     if (cur.remoteOnly) params.remote_only = true;
     if (cur.topOnly) params.top_only = true;
+    if (cur.watchlistOnly) params.watchlist_only = true;
+    if (cur.savedOnly) params.saved_only = true;
     if (cur.postedWithin !== '' && cur.postedWithin != null)
       params.posted_within_days = Number(cur.postedWithin);
     const res = await api.jobs(params);
@@ -138,6 +147,28 @@ export default function JobsPage() {
     }
   }
 
+  async function sendFeedback(
+    id: string,
+    action: 'save' | 'unsave' | 'not_relevant' | 'more_like_this' | 'hide_company',
+    company?: string,
+  ) {
+    if (action === 'hide_company' && !confirm(`Hide all jobs from ${company}?`)) return;
+    setBusy(id);
+    try {
+      await api.jobFeedback(id, action);
+      // not_relevant / hide_company remove cards; save flips locally.
+      if (action === 'not_relevant' || action === 'hide_company') {
+        await load();
+      } else {
+        setItems(items => items.map(j => (j.id === id ? { ...j, saved: action === 'save' } : j)));
+      }
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const fileUrl = (u?: string | null) => (u ? `${api.base}${u}` : undefined);
   const set = (patch: Partial<Filters>) => setF(prev => ({ ...prev, ...patch }));
 
@@ -222,6 +253,19 @@ export default function JobsPage() {
           </select>
         </div>
         <div>
+          <label className="kv">Match level</label>
+          <select
+            className="block w-full border rounded-md px-3 py-2 text-sm"
+            value={f.matchLevel}
+            onChange={e => set({ matchLevel: e.target.value })}
+          >
+            <option value="">any</option>
+            <option value="excellent">Excellent</option>
+            <option value="good">Good</option>
+            <option value="maybe">Maybe</option>
+          </select>
+        </div>
+        <div>
           <label className="kv">Sort by</label>
           <select
             className="block w-full border rounded-md px-3 py-2 text-sm"
@@ -239,6 +283,14 @@ export default function JobsPage() {
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={f.topOnly} onChange={e => set({ topOnly: e.target.checked })} />
           Top companies
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={f.watchlistOnly} onChange={e => set({ watchlistOnly: e.target.checked })} />
+          ⭐ Watchlist only
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={f.savedOnly} onChange={e => set({ savedOnly: e.target.checked })} />
+          🔖 Saved only
         </label>
         <div className="flex gap-2">
           <button onClick={() => load()} className="btn-ghost flex-1">Apply</button>
@@ -276,9 +328,15 @@ export default function JobsPage() {
                       >
                         {j.title}
                       </a>
+                      <MatchPill label={j.match_label} />
+                      {j.watchlisted && <span className="pill-good" title="On your watchlist">⭐ Watchlist</span>}
+                      <TierPill tier={j.company_tier} />
                       <span className="pill-mute">{j.source}</span>
+                      {j.apply_type === 'discovery' && (
+                        <span className="pill-warn" title="Link-out only; apply on the source site">discovery</span>
+                      )}
                       {j.remote && <span className="pill-info">remote</span>}
-                      <span className="pill-mute">{j.status}</span>
+                      {j.saved && <span className="pill-info">🔖 saved</span>}
                       {j.applied_manually_at && <span className="pill-good">applied ✓</span>}
                     </div>
                     <div className="kv">
@@ -289,13 +347,12 @@ export default function JobsPage() {
                       {' • '}
                       <PostedAgo at={j.posted_at || j.discovered_at} />
                     </div>
+                    {j.match_signals && <Skills sig={j.match_signals} />}
                     {j.rank_breakdown && <Breakdown b={j.rank_breakdown} />}
-                    {j.ats_keywords && j.ats_keywords.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {j.ats_keywords.slice(0, 12).map(k => (
-                          <span key={k} className="pill-mute">{k}</span>
-                        ))}
-                      </div>
+                    {j.match_signals?.reasons && j.match_signals.reasons.length > 0 && (
+                      <ul className="mt-2 text-sm text-gray-700 dark:text-gray-300 list-disc pl-5">
+                        {j.match_signals.reasons.map((r, i) => <li key={i}>{r}</li>)}
+                      </ul>
                     )}
                     {j.rank_reasoning && (
                       <p className="text-sm text-gray-700 dark:text-gray-300 mt-2">{j.rank_reasoning}</p>
@@ -343,6 +400,21 @@ export default function JobsPage() {
                         {busy === j.id ? 'Saving…' : 'Mark as applied'}
                       </button>
                     )}
+                    <div className="flex flex-wrap gap-1 justify-end text-xs text-muted pt-1">
+                      <button title={j.saved ? 'Unsave' : 'Save'} className="hover:text-ink"
+                        onClick={() => sendFeedback(j.id, j.saved ? 'unsave' : 'save')}>
+                        {j.saved ? '🔖 Saved' : '🔖 Save'}
+                      </button>
+                      <span>·</span>
+                      <button title="Boost similar roles" className="hover:text-ink"
+                        onClick={() => sendFeedback(j.id, 'more_like_this')}>👍 More like this</button>
+                      <span>·</span>
+                      <button title="Hide & downrank similar" className="hover:text-ink"
+                        onClick={() => sendFeedback(j.id, 'not_relevant')}>🚫 Not relevant</button>
+                      <span>·</span>
+                      <button title="Never show this company" className="hover:text-bad"
+                        onClick={() => sendFeedback(j.id, 'hide_company', j.company)}>Hide {j.company.slice(0, 16)}</button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -367,6 +439,40 @@ function PostedAgo({ at }: { at?: string | null }) {
   const days = Math.floor((Date.now() - new Date(at).getTime()) / 86400000);
   const label = days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days}d ago`;
   return <span title={new Date(at).toLocaleString()}>{label}</span>;
+}
+
+function MatchPill({ label }: { label?: string | null }) {
+  if (!label) return null;
+  const map: Record<string, [string, string]> = {
+    excellent: ['pill-good', 'Excellent match'],
+    good: ['pill-info', 'Good match'],
+    maybe: ['pill-warn', 'Maybe'],
+    not_recommended: ['pill-bad', 'Not recommended'],
+  };
+  const [cls, text] = map[label] || ['pill-mute', label];
+  return <span className={cls}>{text}</span>;
+}
+
+function TierPill({ tier }: { tier?: number | null }) {
+  if (!tier || tier >= 4) return null;
+  const text = tier === 1 ? 'Tier 1' : tier === 2 ? 'Tier 2' : 'Tier 3';
+  return <span className="pill-mute" title="Company quality tier">{text}</span>;
+}
+
+function Skills({ sig }: { sig: NonNullable<Job['match_signals']> }) {
+  const matched = sig.matched_skills || [];
+  const missing = sig.missing_skills || [];
+  if (matched.length === 0 && missing.length === 0) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-1 items-center">
+      {matched.slice(0, 8).map(k => (
+        <span key={`m${k}`} className="pill-good" title="You have this">✓ {k}</span>
+      ))}
+      {missing.slice(0, 6).map(k => (
+        <span key={`x${k}`} className="pill-mute" title="In the JD, not on your résumé">+ {k}</span>
+      ))}
+    </div>
+  );
 }
 
 function Breakdown({ b }: { b: Record<string, number> }) {

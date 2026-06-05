@@ -23,7 +23,17 @@ from typing import List, Optional, Tuple
 from app.config import settings
 from app.db import models
 from app.db.session import session_scope
-from app.services import experience_filter, geo_filter, ranking, relevance, resume_engine
+from app.services import (
+    alerts,
+    company_quality,
+    experience_filter,
+    geo_filter,
+    ranking,
+    relevance,
+    resume_engine,
+    source_health,
+    user_context,
+)
 from app.services.dedupe import upsert_jobs
 from app.services.notifier import notify_summary
 from app.sources.base import RawJob
@@ -36,14 +46,20 @@ _running_users: set[str] = set()        # users with a run already in flight
 _running_lock = threading.Lock()
 
 
-def _fetch_all() -> List[RawJob]:
+def _fetch_all() -> Tuple[List[RawJob], dict]:
+    """Fetch every enabled source. Returns (all_raw_jobs, per_source_stats) where
+    stats[name] = {found, ok, error} (added is filled in after dedupe)."""
     out: List[RawJob] = []
+    stats: dict = {}
     for src in enabled_sources():
         try:
-            out.extend(list(src.fetch()))
+            jobs = list(src.fetch())
+            out.extend(jobs)
+            stats[src.name] = {"found": len(jobs), "added": 0, "ok": True, "error": None}
         except Exception as e:
             log.error(f"Source {src.name} failed: {e}")
-    return out
+            stats[src.name] = {"found": 0, "added": 0, "ok": False, "error": str(e)}
+    return out, stats
 
 
 def _pool_is_fresh(hours: int = 6, min_jobs: int = 60) -> bool:
@@ -88,28 +104,56 @@ def prune_old_jobs(days: int) -> int:
 
 
 def passes_prefilter(
-    technical: bool, years: int, fresher: bool, title: str, description: str
+    technical: bool,
+    years: int,
+    fresher: bool,
+    title: str,
+    description: str,
+    *,
+    ctx=None,
+    company: str = "",
 ) -> bool:
     """Cheap per-user keep/drop decision applied BEFORE any LLM call:
       1. experience-level gate (fresher → entry-only; else level window),
-      2. role-direction hard drop (a technical CV never sees sales/HR/etc.).
+      2. role-direction hard drop (a technical CV never sees sales/HR/etc.),
+      3. (with ctx) blocked/hidden company, excluded keyword, blocked industry,
+         and obvious spam/scam postings.
     """
     if not experience_filter.level_ok(title, description, years, fresher=fresher):
         return False
     if relevance.is_wrong_direction(technical, title):
         return False
+    if ctx is not None:
+        norm = company_quality.normalize(company)
+        if norm in ctx.hidden_companies or ctx.watchlist.get(norm) == "block":
+            return False
+        blob = f"{title}\n{description}".lower()
+        if any(str(k).lower().strip() and str(k).lower().strip() in blob for k in ctx.excluded_keywords):
+            return False
+        if any(str(k).lower().strip() and str(k).lower().strip() in blob for k in ctx.blocked_industries):
+            return False
+        if company_quality.is_suspicious(company, title, description):
+            return False
     return True
 
 
 def rank_jobs_for_user(
-    user_id: str, resume_json: dict, limit: int, fresher: bool = False
+    user_id: str,
+    resume_json: dict,
+    limit: int,
+    fresher: bool = False,
+    watchlist_only: bool = False,
 ) -> int:
-    """Rank up to `limit` of this user's not-yet-ranked jobs against their résumé.
-    In fresher mode, only entry-level jobs are considered."""
+    """Rank up to `limit` of this user's not-yet-ranked jobs against their full
+    career profile + preferences + watchlist + feedback (hybrid scoring).
+
+    watchlist_only: only consider jobs at the user's prioritised companies (used
+    by the fast 30-min watchlist scan)."""
     # Pull a wide pool of not-yet-ranked jobs, then keep only the most
-    # RÉSUMÉ-RELEVANT `limit` to spend LLM calls on (skips off-target sales/HR/etc.).
+    # RELEVANT `limit` to spend LLM calls on (skips off-target sales/HR/etc.).
     pool_size = max(limit * 12, 300)
     with session_scope() as db:
+        ctx = user_context.build_user_ctx(db, user_id, resume_json, fresher)
         already = db.query(models.Ranking.job_id).filter(models.Ranking.user_id == user_id)
         cands = (
             db.query(models.Job)
@@ -119,26 +163,31 @@ def rank_jobs_for_user(
             .limit(pool_size)
             .all()
         )
-        rows = [(j.id, j.title, j.description) for j in cands]
+        rows = [(j.id, j.title, j.description, j.company) for j in cands]
 
-    terms = relevance.candidate_terms(resume_json)
-    technical = relevance.role_is_technical(resume_json, terms)
-    years = ranking.candidate_years(resume_json)
+    fresher = ctx.fresher  # preferences may have forced fresher mode
+    if watchlist_only:
+        prio = {c for c, p in ctx.watchlist.items() if p == "prioritize"}
+        rows = [r for r in rows if company_quality.normalize(r[3]) in prio]
 
     # Per-user pre-filter (before spending any LLM call).
     before = len(rows)
-    rows = [r for r in rows if passes_prefilter(technical, years, fresher, r[1], r[2])]
+    rows = [
+        r
+        for r in rows
+        if passes_prefilter(ctx.technical, ctx.years, fresher, r[1], r[2], ctx=ctx, company=r[3])
+    ]
     dropped = before - len(rows)
 
     rows.sort(
-        key=lambda r: relevance.relevance_score(terms, technical, r[1], r[2]),
+        key=lambda r: relevance.relevance_score(ctx.terms, ctx.technical, r[1], r[2]),
         reverse=True,
     )
     new_ids = [r[0] for r in rows[:limit]]
     if not new_ids:
         log.info(
             f"No rankable jobs for user {user_id[:8]} "
-            f"(fresher={fresher}, years={years}, pre-filtered {dropped}/{before})"
+            f"(fresher={fresher}, years={ctx.years}, pre-filtered {dropped}/{before})"
         )
         return 0
 
@@ -149,7 +198,9 @@ def rank_jobs_for_user(
         try:
             with session_scope() as db:
                 job = db.get(models.Job, jid)
-                ranking.rank_job_for_user(db, user_id, resume_json, job, fresher=fresher)
+                ranking.rank_job_for_user(
+                    db, user_id, resume_json, job, fresher=fresher, ctx=ctx
+                )
                 ranked += 1
                 consecutive_failures = 0
         except Exception as e:
@@ -181,7 +232,7 @@ def _target_users(user_id: Optional[str]) -> List[Tuple[str, dict, bool]]:
 
 
 def _do_fetch(run_id: str, log_buf: List[str]) -> None:
-    raws = _fetch_all()
+    raws, stats = _fetch_all()
     kept, geo_dropped = geo_filter.filter_rawjobs(raws)
     kept, exp_dropped = experience_filter.filter_rawjobs(kept)
     with session_scope() as db:
@@ -189,14 +240,30 @@ def _do_fetch(run_id: str, log_buf: List[str]) -> None:
         run.jobs_found = len(raws)
         new_jobs, _ = upsert_jobs(db, kept)
         run.jobs_new = len(new_jobs)
+        # Attribute new jobs back to their source for health reporting.
+        for j in new_jobs:
+            if j.source in stats:
+                stats[j.source]["added"] += 1
         log_buf.append(
             f"fetched={len(raws)} kept={len(kept)} geo_dropped={geo_dropped} "
             f"exp_dropped={exp_dropped} new={len(new_jobs)}"
         )
+    try:
+        source_health.record(stats)
+    except Exception as e:
+        log.warning(f"Source-health recording failed: {e}")
 
 
-def run_pipeline(trigger: str = "manual", user_id: Optional[str] = None) -> str:
-    """Returns the Run id (or '' if skipped because the user already has a run)."""
+def run_pipeline(
+    trigger: str = "manual", user_id: Optional[str] = None, scan_mode: str = "broad"
+) -> str:
+    """Returns the Run id (or '' if skipped because the user already has a run).
+
+    scan_mode:
+      • "broad"     — fetch all sources (if due) + rank everything (default).
+      • "watchlist" — NO fetch; rank only the user's prioritised-company jobs.
+        Cheap enough to run every ~30 min for near-real-time alerts.
+    """
     if user_id:
         with _running_lock:
             if user_id in _running_users:
@@ -204,14 +271,15 @@ def run_pipeline(trigger: str = "manual", user_id: Optional[str] = None) -> str:
                 return ""
             _running_users.add(user_id)
     try:
-        return _run_pipeline(trigger, user_id)
+        return _run_pipeline(trigger, user_id, scan_mode)
     finally:
         if user_id:
             with _running_lock:
                 _running_users.discard(user_id)
 
 
-def _run_pipeline(trigger: str, user_id: Optional[str]) -> str:
+def _run_pipeline(trigger: str, user_id: Optional[str], scan_mode: str = "broad") -> str:
+    watchlist_only = scan_mode == "watchlist"
     with session_scope() as db:
         run = models.Run(trigger=trigger, status="running")
         db.add(run)
@@ -222,8 +290,9 @@ def _run_pipeline(trigger: str, user_id: Optional[str]) -> str:
     log_buf: List[str] = []
 
     # ── 1. fetch (scheduler always; user trigger only if pool stale) ──
+    # Watchlist scans never fetch — they re-rank the existing pool cheaply.
     fetched = False
-    want_fetch = (user_id is None) or (not _pool_is_fresh())
+    want_fetch = (not watchlist_only) and ((user_id is None) or (not _pool_is_fresh()))
     if want_fetch:
         if _FETCH_LOCK.acquire(blocking=False):
             try:
@@ -241,10 +310,21 @@ def _run_pipeline(trigger: str, user_id: Optional[str]) -> str:
     total_ranked = 0
     users_ranked = 0
     for uid, resume_json, fresher in targets:
-        n = rank_jobs_for_user(uid, resume_json, settings.max_ranks_per_user, fresher=fresher)
+        n = rank_jobs_for_user(
+            uid,
+            resume_json,
+            settings.max_ranks_per_user,
+            fresher=fresher,
+            watchlist_only=watchlist_only,
+        )
         total_ranked += n
         if n:
             users_ranked += 1
+        # Fire alerts for brand-new excellent matches (no-op if not configured).
+        try:
+            alerts.maybe_alert_user(uid)
+        except Exception as e:
+            log.warning(f"Alert check failed for {uid[:8]}: {e}")
 
     # ── 2b. cleanup (only when we fetched, i.e. scheduler / stale refresh) ──
     pruned = prune_old_jobs(settings.job_retention_days) if fetched else 0

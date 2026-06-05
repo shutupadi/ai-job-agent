@@ -126,6 +126,8 @@ class Job(Base):
 
     status: Mapped[str] = mapped_column(String(32), default="new")  # discovery status
     auto_apply: Mapped[bool] = mapped_column(Boolean, default=True)
+    # direct | external | discovery (how the user applies; see RawJob.apply_type)
+    apply_type: Mapped[str] = mapped_column(String(16), default="external")
     applied_manually_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime)
     raw: Mapped[Optional[dict]] = mapped_column(JSON)
 
@@ -158,8 +160,19 @@ class Ranking(Base):
     rank_reasoning: Mapped[Optional[str]] = mapped_column(Text)
     ats_keywords: Mapped[Optional[list]] = mapped_column(JSON)
 
+    # Hybrid-ranking outputs (deterministic signals merged with the LLM score).
+    # match_label: excellent | good | maybe | not_recommended
+    match_label: Mapped[Optional[str]] = mapped_column(String(16))
+    # match_signals: {role, experience, skills, company, recency, salary_location,
+    #                 matched_skills:[], missing_skills:[], company_tier, watchlisted,
+    #                 reasons:[]}
+    match_signals: Mapped[Optional[dict]] = mapped_column(JSON)
+
     # ranked | tailored | applied | skipped
     status: Mapped[str] = mapped_column(String(32), default="ranked")
+    # Per-user job actions (fast filtering). Feedback events also logged in JobFeedback.
+    saved: Mapped[bool] = mapped_column(Boolean, default=False)
+    hidden: Mapped[bool] = mapped_column(Boolean, default=False)
     applied_manually_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
@@ -262,4 +275,97 @@ class SettingKV(Base):
 
     key: Mapped[str] = mapped_column(String(128), primary_key=True)
     value: Mapped[Optional[dict]] = mapped_column(JSON)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
+
+
+# ─── UserPreferences (one row per user) ──────────────────────────────
+class UserPreferences(Base):
+    """Structured search preferences used by the ranker + filters. Stored as
+    JSON lists for flexibility. One-to-one with User (user_id is the PK)."""
+
+    __tablename__ = "user_preferences"
+
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    target_roles: Mapped[list] = mapped_column(JSON, default=list)
+    experience_level: Mapped[Optional[str]] = mapped_column(String(16))  # fresher|1-3|3-5|5-8|8+
+    min_salary_lpa: Mapped[Optional[float]] = mapped_column(Float)
+    preferred_cities: Mapped[list] = mapped_column(JSON, default=list)
+    work_modes: Mapped[list] = mapped_column(JSON, default=list)  # remote|hybrid|onsite
+    job_types: Mapped[list] = mapped_column(JSON, default=list)   # full-time|internship|contract
+    prioritized_industries: Mapped[list] = mapped_column(JSON, default=list)
+    blocked_industries: Mapped[list] = mapped_column(JSON, default=list)
+    preferred_countries: Mapped[list] = mapped_column(JSON, default=list)
+    needs_sponsorship: Mapped[bool] = mapped_column(Boolean, default=False)
+    excluded_keywords: Mapped[list] = mapped_column(JSON, default=list)
+    must_have_skills: Mapped[list] = mapped_column(JSON, default=list)
+    nice_to_have_skills: Mapped[list] = mapped_column(JSON, default=list)
+    # Alerts
+    alert_instant: Mapped[bool] = mapped_column(Boolean, default=False)
+    alert_daily_digest: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_alert_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
+
+
+# ─── WatchlistCompany (per user × company) ───────────────────────────
+class WatchlistCompany(Base):
+    __tablename__ = "watchlist_companies"
+    __table_args__ = (
+        UniqueConstraint("user_id", "company_norm", name="uq_watchlist_user_company"),
+        Index("ix_watchlist_user", "user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    company: Mapped[str] = mapped_column(String(255), nullable=False)   # display
+    company_norm: Mapped[str] = mapped_column(String(255), nullable=False)  # lowercased key
+    # prioritize | normal | block
+    priority: Mapped[str] = mapped_column(String(16), default="prioritize")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_now)
+
+
+# ─── JobFeedback (per user × job action; learning + audit log) ────────
+class JobFeedback(Base):
+    __tablename__ = "job_feedback"
+    __table_args__ = (Index("ix_feedback_user", "user_id"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    job_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("jobs.id", ondelete="CASCADE")
+    )
+    # save | unsave | not_relevant | more_like_this | hide_company | applied | interview
+    action: Mapped[str] = mapped_column(String(24), nullable=False)
+    company_norm: Mapped[Optional[str]] = mapped_column(String(255))  # for hide_company
+    terms: Mapped[Optional[list]] = mapped_column(JSON)  # title tokens, for learning
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_now)
+
+
+# ─── SourceHealth (per source) ───────────────────────────────────────
+class SourceHealth(Base):
+    __tablename__ = "source_health"
+
+    source: Mapped[str] = mapped_column(String(40), primary_key=True)
+    last_run_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime)
+    last_success_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime)
+    jobs_found: Mapped[int] = mapped_column(Integer, default=0)       # last run
+    jobs_added: Mapped[int] = mapped_column(Integer, default=0)       # last run (new)
+    total_runs: Mapped[int] = mapped_column(Integer, default=0)
+    failures: Mapped[int] = mapped_column(Integer, default=0)         # cumulative
+    last_error: Mapped[Optional[str]] = mapped_column(Text)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
+
+
+# ─── CompanyTierOverride (admin-editable; static defaults in code) ────
+class CompanyTierOverride(Base):
+    __tablename__ = "company_tiers"
+
+    company_norm: Mapped[str] = mapped_column(String(255), primary_key=True)
+    company: Mapped[str] = mapped_column(String(255), nullable=False)
+    tier: Mapped[int] = mapped_column(Integer, nullable=False)  # 1..4, 5 = avoid
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_now, onupdate=_now)

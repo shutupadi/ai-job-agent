@@ -9,6 +9,7 @@ const LINKS = [
   { href: '/', label: 'Dashboard' },
   { href: '/jobs', label: 'Shortlist' },
   { href: '/applications', label: 'Applications' },
+  { href: '/preferences', label: 'Preferences' },
   { href: '/settings', label: 'Settings' },
 ];
 

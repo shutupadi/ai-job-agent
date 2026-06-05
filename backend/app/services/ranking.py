@@ -16,7 +16,9 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import models
+from app.services import scoring
 from app.services.llm import llm
+from app.services.scoring import UserCtx
 from app.utils.logger import log
 
 
@@ -148,10 +150,19 @@ def candidate_profile(resume_json: dict, fresher: bool = False) -> str:
 
 
 def rank_job_for_user(
-    db: Session, user_id: str, resume_json: dict, job: models.Job, fresher: bool = False
+    db: Session,
+    user_id: str,
+    resume_json: dict,
+    job: models.Job,
+    fresher: bool = False,
+    ctx: UserCtx | None = None,
 ) -> models.Ranking:
-    """Score one job for one user; upsert their Ranking row. The LLM 0-100 score
-    is then nudged by deterministic recency + top-company boosts."""
+    """Score one job for one user; upsert their Ranking row.
+
+    When `ctx` (a scoring.UserCtx) is supplied, the LLM judgement is fused with
+    deterministic signals + preferences + watchlist + feedback into an
+    explainable hybrid score/label (the preferred path). Without it, we fall back
+    to the legacy LLM-score-plus-boosts behaviour."""
     prompt = llm.load_prompt("rank_job").format(
         candidate_profile=candidate_profile(resume_json, fresher=fresher),
         job_title=job.title,
@@ -178,18 +189,47 @@ def rank_job_for_user(
         rk = models.Ranking(user_id=user_id, job_id=job.id)
         db.add(rk)
 
-    base = int(payload.get("overall", 0))
-    # Only lift jobs that are already a decent fit — don't let company/recency
-    # bonuses inflate clearly-irrelevant roles (e.g. an HR role at a top company).
-    bonus = (_recency_boost(job) + _company_boost(job.company)) if base >= 50 else 0
-    rk.rank_score = max(0, min(100, base + bonus))
+    ak = payload.get("ats_keywords") or []
+    ats_keywords = [str(x) for x in ak] if isinstance(ak, list) else []
+    rk.ats_keywords = ats_keywords
     rk.rank_breakdown = payload.get("breakdown") or {}
     rk.rank_reasoning = payload.get("reasoning") or ""
-    ak = payload.get("ats_keywords") or []
-    rk.ats_keywords = [str(x) for x in ak] if isinstance(ak, list) else []
+
+    if ctx is not None:
+        result = scoring.score_job(
+            ctx,
+            title=job.title,
+            company=job.company,
+            description=job.description or "",
+            location=job.location or "",
+            remote=job.remote,
+            salary_text=job.salary_text or "",
+            posted_at=job.posted_at,
+            discovered_at=job.discovered_at,
+            ats_keywords=ats_keywords,
+            llm_overall=int(payload.get("overall", 0)),
+            llm_breakdown=payload.get("breakdown") or {},
+        )
+        rk.rank_score = result["score"]
+        rk.match_label = result["label"]
+        rk.match_signals = result["signals"]
+        # Excluded jobs (blocked/hidden/suspicious) are hidden, never shortlisted.
+        if result["exclude"]:
+            rk.hidden = True
+    else:
+        base = int(payload.get("overall", 0))
+        # Only lift jobs that are already a decent fit — don't let company/recency
+        # bonuses inflate clearly-irrelevant roles (HR role at a top company).
+        bonus = (_recency_boost(job) + _company_boost(job.company)) if base >= 50 else 0
+        rk.rank_score = max(0, min(100, base + bonus))
+        rk.match_label = scoring.label_for(rk.rank_score)
+
     # Don't clobber a later lifecycle state.
     if rk.status not in ("tailored", "applied"):
         rk.status = "ranked"
     db.flush()
-    log.info(f"Ranked [{user_id[:8]}] {job.company}:{job.title} = {rk.rank_score}")
+    log.info(
+        f"Ranked [{user_id[:8]}] {job.company}:{job.title} "
+        f"= {rk.rank_score} ({rk.match_label})"
+    )
     return payload

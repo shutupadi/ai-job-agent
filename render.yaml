@@ -113,6 +113,26 @@ services:
         sync: false
       - key: ADZUNA_APP_KEY
         sync: false
+      # Ashby + SmartRecruiters public APIs (ToS-friendly, no key). Off by
+      # default — set ASHBY_BOARDS / SMARTRECRUITERS_COMPANIES in the dashboard
+      # and flip these to "true" to enable.
+      - key: ENABLE_ASHBY
+        value: "false"
+      - key: ASHBY_BOARDS
+        sync: false
+      - key: ENABLE_SMARTRECRUITERS
+        value: "false"
+      - key: SMARTRECRUITERS_COMPANIES
+        sync: false
+      # ── Per-user email alerts (Resend or Brevo). Blank = disabled (no-op). ──
+      - key: EMAIL_PROVIDER
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
       - key: WORKDAY_TENANTS
         value: "ms.wd5.myworkdayjobs.com|ms|External|Morgan Stanley,nvidia.wd5.myworkdayjobs.com|nvidia|NVIDIAExternalCareerSite|NVIDIA"
       - key: ORACLE_TENANTS

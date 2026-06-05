@@ -30,6 +30,10 @@ class RawJob:
     # ranks + tailors them but never tries to auto-submit — the user applies
     # manually and marks them applied from the dashboard.
     auto_apply: bool = True
+    # How the user applies: "direct" (we could form-fill the company ATS),
+    # "external" (apply on the company's site/ATS yourself), or "discovery"
+    # (link-out only; e.g. LinkedIn/Naukri scraped listings).
+    apply_type: str = "external"
     raw: dict = field(default_factory=dict)
 
     @property

@@ -14,9 +14,11 @@ from app.api import (
     routes_auth,
     routes_dashboard,
     routes_jobs,
+    routes_preferences,
     routes_resume,
     routes_runs,
     routes_settings,
+    routes_watchlist,
 )
 from app.config import settings
 from app.utils.logger import log
@@ -84,6 +86,10 @@ app.include_router(
     routes_dashboard.router, prefix="/api/dashboard", tags=["dashboard"]
 )
 app.include_router(routes_admin.router, prefix="/api/admin", tags=["admin"])
+app.include_router(
+    routes_preferences.router, prefix="/api/preferences", tags=["preferences"]
+)
+app.include_router(routes_watchlist.router, prefix="/api/watchlist", tags=["watchlist"])
 
 # Serve generated PDFs (read-only)
 app.mount("/files", StaticFiles(directory=str(settings.storage_dir)), name="files")

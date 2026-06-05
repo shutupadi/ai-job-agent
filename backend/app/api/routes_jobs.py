@@ -14,7 +14,14 @@ from app.auth.rate_limit import RateLimiter
 from app.config import settings
 from app.db import models
 from app.db.session import get_db
-from app.schemas.schemas import JobListOut, JobOut, MarkAppliedRequest, RerankResponse
+from app.schemas.schemas import (
+    FeedbackRequest,
+    JobListOut,
+    JobOut,
+    MarkAppliedRequest,
+    RerankResponse,
+)
+from app.services import company_quality, user_context
 from app.services.pipeline import run_pipeline
 from app.utils.logger import log
 
@@ -27,8 +34,16 @@ _PROTECTED_STATUSES = ("tailored", "applied")
 _run_rl = RateLimiter("run", times=settings.rl_run_times, seconds=settings.rl_run_seconds)
 
 
-def _job_out(job: models.Job, rk: Optional[models.Ranking]) -> JobOut:
+def _job_out(
+    job: models.Job,
+    rk: Optional[models.Ranking],
+    tier: Optional[int] = None,
+    watchlisted: bool = False,
+) -> JobOut:
     """Merge a shared Job with THIS user's Ranking into the API shape."""
+    if tier is None:
+        tier = company_quality.tier_for(job.company)
+    sig = (rk.match_signals if rk else None) or {}
     return JobOut(
         id=job.id,
         source=job.source,
@@ -47,10 +62,27 @@ def _job_out(job: models.Job, rk: Optional[models.Ranking]) -> JobOut:
         rank_breakdown=rk.rank_breakdown if rk else None,
         rank_reasoning=rk.rank_reasoning if rk else None,
         ats_keywords=rk.ats_keywords if rk else None,
+        match_label=rk.match_label if rk else None,
+        match_signals=sig,
+        apply_type=job.apply_type or "external",
+        company_tier=tier,
+        watchlisted=watchlisted or bool(sig.get("watchlisted")),
+        saved=bool(rk.saved) if rk else False,
+        hidden=bool(rk.hidden) if rk else False,
         status=rk.status if rk else "new",
         auto_apply=job.auto_apply,
         applied_manually_at=rk.applied_manually_at if rk else None,
     )
+
+
+def _user_watchlist_norms(db: Session, user_id: str, priority: str = "prioritize") -> set:
+    rows = (
+        db.query(models.WatchlistCompany.company_norm)
+        .filter(models.WatchlistCompany.user_id == user_id,
+                models.WatchlistCompany.priority == priority)
+        .all()
+    )
+    return {r[0] for r in rows}
 
 
 @router.get("", response_model=JobListOut)
@@ -63,6 +95,12 @@ def list_jobs(
     status: Optional[str] = None,
     remote_only: bool = False,
     top_only: bool = Query(False, description="Only top-tier companies"),
+    watchlist_only: bool = False,
+    saved_only: bool = False,
+    include_hidden: bool = False,
+    match_level: Optional[str] = Query(
+        None, pattern="^(excellent|good|maybe|not_recommended)$"
+    ),
     posted_within_days: Optional[int] = Query(None, ge=1, le=365),
     sort: str = Query("rank", pattern="^(rank|recent)$"),
     limit: int = Query(50, le=200),
@@ -73,6 +111,8 @@ def list_jobs(
         models.Ranking,
         and_(models.Ranking.job_id == models.Job.id, models.Ranking.user_id == user.id),
     )
+    if not include_hidden:
+        qry = qry.filter(models.Ranking.hidden.is_(False))
     if q:
         like = f"%{q.lower()}%"
         qry = qry.filter(
@@ -88,13 +128,25 @@ def list_jobs(
         qry = qry.filter(models.Ranking.rank_score >= min_rank)
     if status:
         qry = qry.filter(models.Ranking.status == status)
+    if match_level:
+        qry = qry.filter(models.Ranking.match_label == match_level)
     if remote_only:
         qry = qry.filter(models.Job.remote.is_(True))
+    if saved_only:
+        qry = qry.filter(models.Ranking.saved.is_(True))
     if top_only:
         from app.services.ranking import TOP_COMPANIES
 
         qry = qry.filter(
             or_(*[models.Job.company.ilike(f"%{c}%") for c in TOP_COMPANIES])
+        )
+
+    watch_norms = _user_watchlist_norms(db, user.id)
+    if watchlist_only:
+        if not watch_norms:
+            return JobListOut(items=[], total=0)
+        qry = qry.filter(
+            or_(*[models.Job.company.ilike(f"%{n}%") for n in watch_norms])
         )
     if posted_within_days:
         cutoff = dt.datetime.utcnow() - dt.timedelta(days=posted_within_days)
@@ -114,15 +166,36 @@ def list_jobs(
             models.Job.discovered_at.desc(),
         )
     rows = qry.order_by(*order).offset(offset).limit(limit).all()
-    return JobListOut(items=[_job_out(j, rk) for j, rk in rows], total=total)
+    overrides = user_context.load_company_overrides(db)
+    items = []
+    for j, rk in rows:
+        norm = company_quality.normalize(j.company)
+        items.append(
+            _job_out(
+                j,
+                rk,
+                tier=company_quality.tier_for(j.company, overrides),
+                watchlisted=norm in watch_norms,
+            )
+        )
+    return JobListOut(items=items, total=total)
 
 
 def _clear_rankings(db: Session, user_id: str, scope: str) -> int:
-    """Delete the user's rankings. scope='ranked' keeps tailored/applied work;
-    scope='all' clears those too (a full re-score from scratch). Returns count."""
-    q = db.query(models.Ranking).filter(models.Ranking.user_id == user_id)
+    """Delete the user's rankings so they re-score from the shared pool.
+
+    NEVER deletes work/intent the user invested: tailored, applied, or saved
+    rows always survive. scope='ranked' additionally preserves hidden rows
+    (so 'Not relevant' / 'Hide company' choices stick); scope='all' clears
+    hidden too (a full re-evaluation, but still keeps saved/tailored/applied).
+    Returns the number of rows removed."""
+    q = db.query(models.Ranking).filter(
+        models.Ranking.user_id == user_id,
+        models.Ranking.status.notin_(_PROTECTED_STATUSES),
+        models.Ranking.saved.is_(False),
+    )
     if scope != "all":
-        q = q.filter(models.Ranking.status.notin_(_PROTECTED_STATUSES))
+        q = q.filter(models.Ranking.hidden.is_(False))
     return q.delete(synchronize_session=False)
 
 
@@ -218,5 +291,64 @@ def mark_applied(
     db.refresh(job)
     if payload and payload.note:
         log.info(f"Manual apply note for {job.company} – {job.title}: {payload.note}")
+    rk = db.query(models.Ranking).filter_by(user_id=user.id, job_id=job_id).first()
+    return _job_out(job, rk)
+
+
+@router.post("/{job_id}/feedback", response_model=JobOut)
+def feedback(
+    job_id: str,
+    payload: FeedbackRequest,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Record a feedback action. The signals feed back into THIS user's ranking:
+      • save / unsave     → keep in 'Saved'; protected from re-rank cleanup.
+      • not_relevant      → hide this job + downrank similar titles in future runs.
+      • hide_company      → hide all current + future jobs from this company.
+      • more_like_this    → boost similar titles in future runs.
+    """
+    job = db.get(models.Job, job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    rk = db.query(models.Ranking).filter_by(user_id=user.id, job_id=job_id).first()
+    if rk is None:
+        rk = models.Ranking(user_id=user.id, job_id=job_id)
+        db.add(rk)
+
+    action = payload.action
+    norm = company_quality.normalize(job.company)
+    terms = user_context.title_terms(job.title)
+
+    if action == "save":
+        rk.saved = True
+    elif action == "unsave":
+        rk.saved = False
+    elif action == "not_relevant":
+        rk.hidden = True
+    elif action == "hide_company":
+        rk.hidden = True
+        # Hide every current ranking for this company (match on normalized name).
+        pairs = (
+            db.query(models.Ranking, models.Job)
+            .join(models.Job, models.Job.id == models.Ranking.job_id)
+            .filter(models.Ranking.user_id == user.id)
+            .all()
+        )
+        for r, j in pairs:
+            if company_quality.normalize(j.company) == norm:
+                r.hidden = True
+
+    db.add(
+        models.JobFeedback(
+            user_id=user.id,
+            job_id=job_id,
+            action=action,
+            company_norm=norm if action == "hide_company" else None,
+            terms=terms,
+        )
+    )
+    db.commit()
+    db.refresh(job)
     rk = db.query(models.Ranking).filter_by(user_id=user.id, job_id=job_id).first()
     return _job_out(job, rk)

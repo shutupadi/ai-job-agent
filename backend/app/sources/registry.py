@@ -6,6 +6,7 @@ from typing import List
 
 from app.config import settings
 from app.sources.adzuna import AdzunaSource
+from app.sources.ashby import AshbySource
 from app.sources.base import JobSource
 from app.sources.greenhouse import GreenhouseSource
 from app.sources.indeed import IndeedSource
@@ -13,6 +14,7 @@ from app.sources.lever import LeverSource
 from app.sources.linkedin import LinkedInSource
 from app.sources.naukri import NaukriSource
 from app.sources.oracle import OracleSource
+from app.sources.smartrecruiters import SmartRecruitersSource
 from app.sources.wellfound import WellfoundSource
 from app.sources.workday import WorkdaySource
 from app.sources.ycombinator import YCombinatorSource
@@ -40,4 +42,8 @@ def enabled_sources() -> List[JobSource]:
         sources.append(WellfoundSource())
     if settings.enable_adzuna:
         sources.append(AdzunaSource())
+    if settings.enable_ashby:
+        sources.append(AshbySource())
+    if settings.enable_smartrecruiters:
+        sources.append(SmartRecruitersSource())
     return sources

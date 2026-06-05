@@ -67,6 +67,7 @@ def upsert_jobs(db: Session, raws: Iterable[RawJob]) -> Tuple[List[models.Job], 
             salary_text=r.salary_text,
             posted_at=_parse_dt(r.posted_at),
             auto_apply=r.auto_apply,
+            apply_type=getattr(r, "apply_type", "external"),
             raw=r.raw,
             status="new",
         )

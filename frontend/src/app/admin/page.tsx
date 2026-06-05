@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, AdminStats, AdminUser, Run } from '@/lib/api';
+import { api, AdminStats, AdminUser, Run, SourceHealth } from '@/lib/api';
 import { useAuth } from '../AuthProvider';
 
 export default function AdminPage() {
@@ -9,6 +9,7 @@ export default function AdminPage() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
+  const [health, setHealth] = useState<SourceHealth[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
 
@@ -16,10 +17,13 @@ export default function AdminPage() {
     if (user && !user.is_admin) return;
     (async () => {
       try {
-        const [s, u, r] = await Promise.all([api.adminStats(), api.adminUsers(), api.adminRuns()]);
+        const [s, u, r, h] = await Promise.all([
+          api.adminStats(), api.adminUsers(), api.adminRuns(), api.adminSourceHealth(),
+        ]);
         setStats(s);
         setUsers(u);
         setRuns(r);
+        setHealth(h);
       } catch (e: any) {
         setErr(e.message);
       }
@@ -113,6 +117,43 @@ export default function AdminPage() {
               )}
             </div>
           ))}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="font-semibold mb-3">Source health</h2>
+        <div className="card overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-muted">
+                <th className="py-1 pr-4">Source</th>
+                <th className="py-1 pr-4">Last run</th>
+                <th className="py-1 pr-4">Found</th>
+                <th className="py-1 pr-4">Added</th>
+                <th className="py-1 pr-4">Failures</th>
+                <th className="py-1">Last error</th>
+              </tr>
+            </thead>
+            <tbody>
+              {health.map(h => (
+                <tr key={h.source} className="border-t border-gray-100 dark:border-gray-700">
+                  <td className="py-1 pr-4 font-medium">{h.source}</td>
+                  <td className="py-1 pr-4 text-muted">
+                    {h.last_run_at ? new Date(h.last_run_at).toLocaleString() : '—'}
+                  </td>
+                  <td className="py-1 pr-4">{h.jobs_found}</td>
+                  <td className="py-1 pr-4">{h.jobs_added}</td>
+                  <td className={`py-1 pr-4 ${h.failures ? 'text-bad' : ''}`}>{h.failures}</td>
+                  <td className="py-1 text-bad truncate max-w-xs" title={h.last_error || ''}>
+                    {h.last_error || ''}
+                  </td>
+                </tr>
+              ))}
+              {health.length === 0 && (
+                <tr><td colSpan={6} className="py-2 text-muted">No source runs recorded yet.</td></tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
 

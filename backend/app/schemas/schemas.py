@@ -49,6 +49,13 @@ class JobOut(_ORM):
     rank_breakdown: Optional[dict] = None
     rank_reasoning: Optional[str] = None
     ats_keywords: Optional[List[str]] = None
+    match_label: Optional[str] = None
+    match_signals: Optional[dict] = None
+    apply_type: str = "external"
+    company_tier: Optional[int] = None
+    watchlisted: bool = False
+    saved: bool = False
+    hidden: bool = False
     status: str
     auto_apply: bool = True
     applied_manually_at: Optional[dt.datetime] = None
@@ -67,6 +74,115 @@ class MarkAppliedRequest(BaseModel):
 class RerankResponse(BaseModel):
     status: str          # "started" | "reset"
     cleared: int = 0     # how many ranking rows were removed
+
+
+class FeedbackRequest(BaseModel):
+    # save | unsave | not_relevant | more_like_this | hide_company
+    action: str = Field(pattern="^(save|unsave|not_relevant|more_like_this|hide_company)$")
+
+
+# ── User preferences ──
+class UserPreferencesOut(BaseModel):
+    target_roles: List[str] = []
+    experience_level: Optional[str] = None
+    min_salary_lpa: Optional[float] = None
+    preferred_cities: List[str] = []
+    work_modes: List[str] = []
+    job_types: List[str] = []
+    prioritized_industries: List[str] = []
+    blocked_industries: List[str] = []
+    preferred_countries: List[str] = []
+    needs_sponsorship: bool = False
+    excluded_keywords: List[str] = []
+    must_have_skills: List[str] = []
+    nice_to_have_skills: List[str] = []
+    alert_instant: bool = False
+    alert_daily_digest: bool = True
+
+
+class UserPreferencesUpdate(BaseModel):
+    target_roles: Optional[List[str]] = None
+    experience_level: Optional[str] = None
+    min_salary_lpa: Optional[float] = None
+    preferred_cities: Optional[List[str]] = None
+    work_modes: Optional[List[str]] = None
+    job_types: Optional[List[str]] = None
+    prioritized_industries: Optional[List[str]] = None
+    blocked_industries: Optional[List[str]] = None
+    preferred_countries: Optional[List[str]] = None
+    needs_sponsorship: Optional[bool] = None
+    excluded_keywords: Optional[List[str]] = None
+    must_have_skills: Optional[List[str]] = None
+    nice_to_have_skills: Optional[List[str]] = None
+    alert_instant: Optional[bool] = None
+    alert_daily_digest: Optional[bool] = None
+
+
+# ── Career profile (editable subset of the parsed résumé) ──
+class CareerProfileOut(BaseModel):
+    name: str = ""
+    experience_years: int = 0
+    seniority: str = ""
+    role_direction: str = ""
+    current_role: str = ""
+    current_company: str = ""
+    target_titles: List[str] = []
+    target_job_types: List[str] = []
+    domains: List[str] = []
+    primary_skills: List[str] = []
+    summary: str = ""
+
+
+class CareerProfileUpdate(BaseModel):
+    experience_years: Optional[int] = None
+    seniority: Optional[str] = None
+    role_direction: Optional[str] = None
+    current_role: Optional[str] = None
+    current_company: Optional[str] = None
+    target_titles: Optional[List[str]] = None
+    target_job_types: Optional[List[str]] = None
+    domains: Optional[List[str]] = None
+    primary_skills: Optional[List[str]] = None
+    summary: Optional[str] = None
+
+
+# ── Watchlist ──
+class WatchlistOut(BaseModel):
+    id: str
+    company: str
+    priority: str  # prioritize | normal | block
+
+
+class WatchlistCreate(BaseModel):
+    company: str = Field(min_length=1, max_length=200)
+    priority: str = Field(default="prioritize", pattern="^(prioritize|normal|block)$")
+
+
+class WatchlistPatch(BaseModel):
+    priority: str = Field(pattern="^(prioritize|normal|block)$")
+
+
+# ── Source health (admin) ──
+class SourceHealthOut(_ORM):
+    source: str
+    last_run_at: Optional[dt.datetime] = None
+    last_success_at: Optional[dt.datetime] = None
+    jobs_found: int = 0
+    jobs_added: int = 0
+    total_runs: int = 0
+    failures: int = 0
+    last_error: Optional[str] = None
+
+
+# ── Company tier overrides (admin) ──
+class CompanyTierOut(BaseModel):
+    company: str
+    tier: int
+
+
+class CompanyTierUpsert(BaseModel):
+    company: str = Field(min_length=1, max_length=200)
+    tier: int = Field(ge=1, le=5)
 
 
 # ── Applications ──
